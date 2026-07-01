@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"> 
+  <title>Pac-Man AI Game (GTM) - Ultimate Live Production Edition</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+  <style>
+    /* Premium Cyber Neon UI Styling */
+    body { 
+        text-align: center; 
+        background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%); 
+        color: white; 
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        margin: 0;
+        min-height: 100vh;
+    }
+    canvas { 
+        background: rgba(0, 0, 0, 0.6); 
+        display: block; 
+        margin: auto; 
+        border: 2px solid #000000;
+        border-radius: 10px;
+        box-shadow: 0 0 30px rgba(0, 255, 0, 0.2), inset 0 0 20px rgba(0, 255, 0, 0.1);
+    }
+    #directionDisplay { 
+        font-size: 2.5vw; 
+        margin-top: 10px; 
+        color: #0f0; 
+        text-shadow: 0 0 10px #0f0, 0 0 20px #0f0;
+        font-weight: bold;
+        letter-spacing: 2px;
+    }
+    #info { margin-top: 10px; color: #ddd; font-size: 1.2rem;}
+    
+    /* Sleek Glassmorphism UI Launcher Container */
+    #setup-ui { 
+        padding: 20px; 
+        background: rgba(255,255,255,0.05); 
+        border-radius: 15px; 
+        display: inline-block; 
+        margin-bottom: 15px;
+        backdrop-filter: blur(5px);
+        border: 1px solid rgba(255,255,255,0.1);
+        margin-top: 20px;
+    }
+    
+    #startButton { 
+        padding: 12px 28px; 
+        font-size: 18px; 
+        cursor: pointer; 
+        background: linear-gradient(45deg, #00ffff, #0033ff); 
+        color: #fff; 
+        border: none; 
+        border-radius: 5px; 
+        font-weight: bold; 
+        box-shadow: 0 0 15px rgba(0,212,255,0.4); 
+        transition: all 0.3s ease;
+    }
+    #startButton:hover { 
+        transform: scale(1.05); 
+        box-shadow: 0 0 25px rgba(0,212,255,0.8); 
+    }
+  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <h2 style="color: #fff; text-shadow: 0 0 10px cyan; margin-top: 20px;">Pac-Man Controlled by AI Gestures</h2>
+  
+  <div id="setup-ui">
+    <button id="startButton">Click to Start</button>
+  </div>
+  
+  <div id="directionDisplay">Waiting for prediction...</div>
+  <div id="info">
+    <p id="scoreDisplay">Score: 0 | High Score: 0 | Lives: ❤️❤️</p>
+    <p id="timeDisplay">Time Left: 80s</p>
+  </div>
+  <video id="webcam" autoplay playsinline width="224" height="224" style="display:none;"></video>
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    // 💡 預設官方模型連結與動態變數配置
+    const DEFAULT_URL = "https://teachablemachine.withgoogle.com/models/i0fcHolgt/";
+    let URL = ""; 
+    let model, webcam, ctx, canvas;
+
+    // Stable 14x15 Map Matrix System Layout
+    const layout = [
+      "UUUUUUUUUUUUUU",
+      "U...G...G....U",
+      "U.WWG.WWW..WWU",
+      "U.W...WWW....U",
+      "U.WW..WWW..WWU",
+      "U.......G....U",
+      "GGWWWOWWOWWWGG",
+      "U.GG.........U",
+      "U.WW...WWW..WU",
+      "U.WW.....W..WU",
+      "U.WW.GWW.W..WU",
+      "U........G..WU",
+      "UUUUUUUUUUUUUU"
+    ];
+
+    let TILE_SIZE = 30; 
+    let board = [];
+    let rows = layout.length+1;
+    let cols = layout[0].length+1;
+
+    // Entities
+    let pacman = { x: 1, y: 1 };
+    
+    // Configured for Three Independent Ghosts
+    let ghost = { x: 6, y: 5 };   let ghostStart = { x: 6, y: 5 };
+    let ghost2 = { x: 8, y: 5 };  let ghost2Start = { x: 8, y: 5 };
+    let ghost3 = { x: 10, y: 5 }; let ghost3Start = { x: 10, y: 5 };
+
+    // Graphics Pipeline Asset Storage
+    const ghostImage = new Image();
+    ghostImage.src = "pinky.jpeg"; 
+    let ghostImageLoaded = false;
+    ghostImage.onload = () => { ghostImageLoaded = true; };
+
+    const ustImage = new Image();
+    ustImage.src = "ust_animation.gif"; 
+    let ustImageLoaded = false;
+    ustImage.onload = () => { ustImageLoaded = true; };
+
+    const logo35 = new Image();
+    logo35.src = "35a_logo.png";
+    let logo35Loaded = false;
+    logo35.onload = () => { logo35Loaded = true; };
+
+    const gceLogo = new Image();
+    gceLogo.src = "gce_logo.png";
+    let gceLogoLoaded = false;
+    gceLogo.onload = () => { gceLogoLoaded = true; };
+
+    const redBirdImage = new Image();
+    redBirdImage.src = "ust_red_bird.png";
+    let redBirdImageLoaded = false;
+    redBirdImage.onload = () => { redBirdImageLoaded = true; };
+
+    const ustStaticLogo = new Image();
+    ustStaticLogo.src = "ust_logo.png";
+    let ustStaticLogoLoaded = false;
+    ustStaticLogo.onload = () => { ustStaticLogoLoaded = true; };
+
+    // Frame Speed Mechanics
+    let moveCooldown = 0;
+    const MOVE_DELAY = 15; 
+
+    let ghostCooldown = 0;  const GHOST_DELAY = 50;  // Slow Ghost
+    let ghost2Cooldown = 0; const GHOST2_DELAY = 30; // Medium Ghost
+    let ghost3Cooldown = 0; const GHOST3_DELAY = 15;  // Fast Ghost
+
+    // Global Game State Variables
+    let powerMode = false;
+    let powerTimerSeconds = 0; 
+    let ghostCombo = 0;       
+    let floatingTexts = [];   
+
+    // Runtime Metrics
+    let score = 0;
+    let highestScore = localStorage.getItem("highestScore") || 0;
+    let totalDots = 0;
+    let timeLeft = 80;
+    let lives = 2; 
+    let gameOver = false;
+    let invincibilityFrames = 0; // 0.5 秒無敵幀計時（約 30 幀）
+
+    async function initModelAndWebcam() {
+      model = await tmImage.load(URL + "model.json", URL + "metadata.json");
+      webcam = new tmImage.Webcam(224, 224, true);
+      await webcam.setup();
+      await webcam.play();
+      webcam.canvas.style.display = "none";
+      document.body.appendChild(webcam.canvas);
+    }
+
+    function createBoard() {
+      board = layout.map(row => row.split(""));
+
+      const dotPositions = [];
+      for (let y = 0; y < board.length; y++) {
+        for (let x = 0; x < board[y].length; x++) {
+          if (board[y][x] === ".") dotPositions.push({ x, y });
+        }
+      }
+
+      for (let i = dotPositions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [dotPositions[i], dotPositions[j]] = [dotPositions[j], dotPositions[i]];
+      }
+      const pickCount = Math.min(5, dotPositions.length);
+      for (let i = 0; i < pickCount; i++) {
+        const p = dotPositions[i];
+        board[p.y][p.x] = "O";
+      }
+
+      totalDots = board.flat().filter(cell => [".", "G", "O"].includes(cell)).length;
+
+      // 讓三隻鬼魂隨機出生在合法空地
+      const validTiles = [];
+      for (let y = 0; y < board.length; y++) {
+        for (let x = 0; x < board[y].length; x++) {
+          if (board[y][x] !== "W" && board[y][x] !== "U") {
+            validTiles.push({ x, y });
+          }
+        }
+      }
+      if (validTiles.length > 3) {
+        validTiles.sort(() => Math.random() - 0.5);
+        ghost = { x: validTiles[0].x, y: validTiles[0].y };   ghostStart = { ...ghost };
+        ghost2 = { x: validTiles[1].x, y: validTiles[1].y };  ghost2Start = { ...ghost2 };
+        ghost3 = { x: validTiles[2].x, y: validTiles[2].y };  ghost3Start = { ...ghost3 };
+      }
+    }
+
+    function setupCanvas() {
+        canvas = document.getElementById("gameCanvas");
+        ctx = canvas.getContext("2d");
+
+        const availableWidth = window.innerWidth * 0.9;
+        TILE_SIZE = Math.floor(availableWidth / cols);
+
+        canvas.width = TILE_SIZE * cols;
+        canvas.height = TILE_SIZE * rows;
+
+        canvas.style.width = (TILE_SIZE * cols) + "px";
+        canvas.style.height = (TILE_SIZE * rows) + "px";
+    }
+
+    async function loop() {
+      if (gameOver) return;
+      webcam.update();
+      const prediction = await model.predict(webcam.canvas);
+      const highest = prediction.reduce((a, b) => a.probability > b.probability ? a : b);
+      const direction = highest.className.toLowerCase();
+      
+      const confidencePercentage = (highest.probability * 100).toFixed(1);
+
+      // 信心值平方比率 (2 * probability^2)
+      const confidenceScore = highest.probability;
+      let speedFactor = 3 * (confidenceScore * confidenceScore);
+
+      // 🌀 新增：如果吃掉大豆處於無敵模式，移動速度大幅提升 1.5 倍！
+      if (powerMode) {
+          speedFactor *= 2; // 你可以自由調整這個數字，倍數越高移速越快
+      }
+
+      document.getElementById("directionDisplay").innerText =
+        `Predicted: ${direction.toUpperCase()} (${confidencePercentage}%)` + (powerMode ? ` | POWER MODE ${powerTimerSeconds}s` : "");
+
+      if (moveCooldown <= 0) {
+        movePacman(direction);
+        moveCooldown = MOVE_DELAY;
+      } else {
+        moveCooldown -= speedFactor; 
+      }
+
+      moveGhost();
+
+      // 每一個畫格遞減無敵時間
+      if (invincibilityFrames > 0) {
+        invincibilityFrames--;
+      }
+
+      checkCollision();
+
+      drawGame();
+      window.requestAnimationFrame(loop);
+    }
+
+    function movePacman(direction) {
+      if (direction === "stop") return;
+
+      let dx = 0, dy = 0;
+      if (direction === "up") dy = -1;
+      if (direction === "down") dy = 1;
+      if (direction === "left") dx = -1;
+      if (direction === "right") dx = 1;
+
+      let newX = pacman.x + dx;
+      let newY = pacman.y + dy;
+
+      // THE WARP TUNNEL MECHANIC (Row 6 Edges)
+      if (newY === 6) {
+          if (newX < 0) {
+              newX = 13; 
+          } else if (newX > 13) {
+              newX = 0;  
+          }
+      }
+
+      if (!board[newY] || !board[newY][newX]) return;
+      const target = board[newY][newX];
+      if (target === "W" || target === "U") return;
+
+      pacman.x = newX;
+      pacman.y = newY;
+
+      if ([".", "G", "O"].includes(target)) {
+        if (target === ".") score += 5;
+        else if (target === "G") score += 25;
+        else if (target === "O") {
+          score += 50;
+          powerMode = true;
+          powerTimerSeconds = 5; 
+          ghostCombo = 0;        
+        }
+        board[newY][newX] = " ";
+        totalDots--;
+      }
+    }
+
+    // Smart AI Routing Module
+    function executeGhostSmartStep(gEntity) {
+      const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+      const validMoves = [];
+
+      for (const [dx, dy] of dirs) {
+        const nx = gEntity.x + dx;
+        const ny = gEntity.y + dy;
+        if (board[ny] && board[ny][nx] && board[ny][nx] !== "W" && board[ny][nx] !== "U") {
+          const distance = Math.abs(nx - pacman.x) + Math.abs(ny - pacman.y);
+          validMoves.push({ x: nx, y: ny, dist: distance });
+        }
+      }
+
+      if (validMoves.length === 0) return;
+
+      if (powerMode) {
+        validMoves.sort((a, b) => b.dist - a.dist);
+      } else {
+        validMoves.sort((a, b) => a.dist - b.dist);
+      }
+
+      const chosenMove = (Math.random() < 0.2) ? validMoves[Math.floor(Math.random() * validMoves.length)] : validMoves[0];
+      
+      gEntity.x = chosenMove.x;
+      gEntity.y = chosenMove.y;
+    }
+
+    function moveGhost() {
+      if (ghostCooldown > 0) ghostCooldown--;
+      else { executeGhostSmartStep(ghost); ghostCooldown = GHOST_DELAY; }
+
+      if (ghost2Cooldown > 0) ghost2Cooldown--;
+      else { executeGhostSmartStep(ghost2); ghost2Cooldown = GHOST2_DELAY; }
+
+      if (ghost3Cooldown > 0) ghost3Cooldown--;
+      else { executeGhostSmartStep(ghost3); ghost3Cooldown = GHOST3_DELAY; }
+    }
+
+    function respawnGhost(gEntity) {
+        const validTiles = [];
+        for (let y = 0; y < board.length; y++) {
+            for (let x = 0; x < board[y].length; x++) {
+                if (board[y][x] !== "W" && board[y][x] !== "U") validTiles.push({x, y});
+            }
+        }
+        if (validTiles.length > 0) {
+            const spawn = validTiles[Math.floor(Math.random() * validTiles.length)];
+            gEntity.x = spawn.x;
+            gEntity.y = spawn.y;
+        }
+    }
+
+    // 💡 包含 0.5 秒傷害間隔鎖定的生命衝突系統
+    function checkCollision() {
+        const handleGhostCatch = (gEntity) => {
+            if (pacman.x === gEntity.x && pacman.y === gEntity.y) {
+                if (powerMode) {
+                    ghostCombo++;
+                    const earnedScore = 200 * ghostCombo; 
+                    score += earnedScore;
+                    
+                    floatingTexts.push({ x: gEntity.x, y: gEntity.y, text: `+${earnedScore}`, life: 40 });
+                    respawnGhost(gEntity); 
+                } else {
+                    // 🛡️ 判定只有在無敵冷卻倒數為 0 時才執行扣生命
+                    if (invincibilityFrames <= 0) {
+                        lives--; 
+                        if (lives <= 0) {
+                            gameOver = true;
+                            updateHighestScore();
+                            setTimeout(() => alert("👻 Game Over! You lost all your lives."), 50);
+                        } else {
+                            // 設定 0.5 秒傷害防護牆（約 30 畫格）
+                            invincibilityFrames = 30; 
+                            respawnGhost(gEntity); 
+                        }
+                    }
+                }
+            }
+        };
+
+        handleGhostCatch(ghost);   
+        handleGhostCatch(ghost2); 
+        handleGhostCatch(ghost3); 
+    }
+
+    function drawBackgroundPacman(xCol, yRow, sizeMultiplier, color) {
+        ctx.save();
+        ctx.globalAlpha = 0.20;
+        ctx.shadowBlur = 40;
+        ctx.shadowColor = color;
+        ctx.fillStyle = color;
+
+        const centerX = xCol * TILE_SIZE;
+        const centerY = yRow * TILE_SIZE;
+        const radius = (TILE_SIZE * sizeMultiplier) / 2;
+
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0.15 * Math.PI, 1.85 * Math.PI);
+        ctx.lineTo(centerX, centerY);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    function drawBackgroundGhost(xCol, yRow, sizeMultiplier, color) {
+        ctx.save();
+        ctx.globalAlpha = 0.20; 
+        ctx.shadowBlur = 40;
+        ctx.shadowColor = color;
+        ctx.fillStyle = color;
+
+        const size = TILE_SIZE * sizeMultiplier;
+        const radius = size / 2;
+        const startX = (xCol * TILE_SIZE) - radius;
+        const startY = (yRow * TILE_SIZE) + radius; 
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(startX, startY - radius); 
+        ctx.arc(startX + radius, startY - radius, radius, Math.PI, 0); 
+        ctx.lineTo(startX + size, startY); 
+        
+        const tentacleW = size / 3;
+        ctx.lineTo(startX + size - tentacleW/2, startY - radius*0.25);
+        ctx.lineTo(startX + size - tentacleW, startY);
+        ctx.lineTo(startX + tentacleW + tentacleW/2, startY - radius*0.25);
+        ctx.lineTo(startX + tentacleW, startY);
+        ctx.lineTo(startX + tentacleW/2, startY - radius*0.25);
+        ctx.lineTo(startX, startY);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    function drawGame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // LAYER 1: Ambient Backdrop Underlays
+        drawBackgroundPacman(5, 4, 1, "#ffff00"); 
+        drawBackgroundGhost(11, 8, 1, "pink");
+
+        // LAYER 2: Optimized Food Pellet Glow Streams
+        for (let y = 0; y < board.length; y++) {
+            for (let x = 0; x < board[y].length; x++) {
+                const tile = board[y][x];
+                const dx = x * TILE_SIZE + TILE_SIZE/2;
+                const dy = y * TILE_SIZE + TILE_SIZE/2;
+                if (tile === ".") {
+                    ctx.save();
+                    ctx.shadowBlur = 5;
+                    ctx.shadowColor = "white";
+                    ctx.fillStyle = "white";
+                    ctx.beginPath(); ctx.arc(dx, dy, Math.max(1, TILE_SIZE * 0.05), 0, 2*Math.PI); ctx.fill();
+                    ctx.restore();
+                } else if (tile === "G") {
+                    ctx.save();
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = "#00ff00";
+                    ctx.fillStyle = "#00ff00";
+                    ctx.beginPath(); ctx.arc(dx, dy, Math.max(2, TILE_SIZE * 0.09), 0, 2*Math.PI); ctx.fill();
+                    ctx.restore();
+                } else if (tile === "O") {
+                    if (redBirdImageLoaded) {
+                        const birdSize = TILE_SIZE * 0.5; 
+                        ctx.drawImage(redBirdImage, dx - birdSize/2, dy - birdSize/2, birdSize, birdSize);
+                    } else {
+                        ctx.save();
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = "orange";
+                        ctx.fillStyle = "orange";
+                        ctx.beginPath(); ctx.arc(dx, dy, Math.max(5, TILE_SIZE*0.22), 0, 2*Math.PI); ctx.fill();
+                        ctx.restore();
+                    }
+                }
+            }
+        }
+
+        // LAYER 3: Active Mesh Rendering (Pac-Man & Dynamic Ghosts)
+        const pX = pacman.x * TILE_SIZE + TILE_SIZE / 2;
+        const pY = pacman.y * TILE_SIZE + TILE_SIZE / 2;
+        const pRadius = TILE_SIZE * 0.45;
+        const bodyDepth = TILE_SIZE * 0.25; 
+
+        // 💡 渲染小精靈（加入無敵狀態高頻率透明閃爍動畫）
+        ctx.save();
+        if (invincibilityFrames > 0) {
+            ctx.globalAlpha = (invincibilityFrames % 10 < 5) ? 0.2 : 1.0; 
+        }
+
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.beginPath();
+        ctx.arc(pX + 4, pY + 4 + bodyDepth, pRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#ccaa00"; 
+        for (let i = 0; i < bodyDepth; i++) {
+            ctx.beginPath();
+            ctx.arc(pX, pY + i, pRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.fillStyle = "#ffff00"; 
+        ctx.beginPath();
+        ctx.arc(pX, pY, pRadius, 0.2 * Math.PI, 1.8 * Math.PI); 
+        ctx.lineTo(pX, pY);
+        ctx.fill();
+
+        ctx.fillStyle = "black";
+        ctx.beginPath();
+        ctx.arc(pX + pRadius * 0.2, pY - pRadius * 0.5, pRadius * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore(); 
+
+        // Universal Ghost Render Profile
+        const renderGhostEntity = (gObj) => {
+            ctx.save();
+            const gX = gObj.x * TILE_SIZE;
+            const gY = gObj.y * TILE_SIZE;
+            
+            if (powerMode) {
+                if (ghostImageLoaded) {
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = "pink";
+                    ctx.drawImage(ghostImage, gX, gY, TILE_SIZE, TILE_SIZE);
+                }
+            } else {
+                ctx.fillStyle = "white"; 
+                ctx.font = `${TILE_SIZE * 1.1}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = "#cc00ff";
+                ctx.fillText("👻", gX + TILE_SIZE / 2, gY + TILE_SIZE / 2);
+            }
+            ctx.restore();
+        };
+
+        renderGhostEntity(ghost);
+        renderGhostEntity(ghost2);
+        renderGhostEntity(ghost3);
+
+        // LAYER 4: Render Floating Score Animations
+        for (let i = floatingTexts.length - 1; i >= 0; i--) {
+            let ft = floatingTexts[i];
+            ctx.save();
+            ctx.fillStyle = `rgba(0, 255, 255, ${ft.life / 40})`; 
+            ctx.font = `bold ${TILE_SIZE * 1.2}px 'Segoe UI', sans-serif`;
+            ctx.textAlign = "center";
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "cyan";
+            ctx.fillText(ft.text, ft.x * TILE_SIZE + TILE_SIZE/2, ft.y * TILE_SIZE - (40 - ft.life));
+            ctx.restore();
+            ft.life--;
+            if (ft.life <= 0) floatingTexts.splice(i, 1);
+        }
+
+        // LAYER 5: Beautiful Two-Tone Cyber Neon Grids
+        for (let y = 0; y < board.length; y++) {
+            for (let x = 0; x < board[y].length; x++) {
+                const tile = board[y][x];
+                if (tile === "U" || tile === "W") {
+                    const px = x * TILE_SIZE;
+                    const py = y * TILE_SIZE;
+                    
+                    ctx.save();
+                    ctx.shadowBlur = tile === "U" ? 15 : 5;
+                    ctx.shadowColor = tile === "U" ? "#0033ff" : "#00ffff"; 
+                    ctx.strokeStyle = tile === "U" ? "#4169E1" : "cyan";
+                    
+                    ctx.lineWidth = tile === "U" ? TILE_SIZE * 0.12 : TILE_SIZE * 0.1;
+                    
+                    ctx.lineJoin = "round"; 
+                    ctx.strokeRect(px + ctx.lineWidth, py + ctx.lineWidth, TILE_SIZE - ctx.lineWidth*2, TILE_SIZE - ctx.lineWidth*2);
+                    ctx.restore();
+                }
+            }
+        }
+
+        // LAYER 6: Institutional Branding Infrastructure
+        if (ustImageLoaded) {
+            const fullBlockSize = 3 * TILE_SIZE; 
+            const targetScale = 0.7;
+            const logoWidth = fullBlockSize * targetScale;
+            const logoHeight = fullBlockSize * targetScale;
+            const offset = 0.5 * (fullBlockSize - logoWidth);
+
+            const startX = (6 * TILE_SIZE) + offset;
+            const startY = (2 * TILE_SIZE) + offset;
+            ctx.drawImage(ustImage, startX, startY, logoWidth, logoHeight);
+        }
+
+        if (logo35Loaded) {
+            const areaW = 2 * TILE_SIZE; 
+            const areaH = 2 * TILE_SIZE; 
+            const targetW = areaW * 0.7;
+            const targetH = areaH * 0.7;
+            const offX = (areaW - targetW) / 2;
+            const offY = (areaH - targetH) / 2;
+            ctx.drawImage(logo35, (2 * TILE_SIZE) + offX, (8 * TILE_SIZE) + offY, targetW, targetH);
+        }
+
+        if (gceLogoLoaded) {
+            const areaW = 2 * TILE_SIZE; 
+            const areaH = 1 * TILE_SIZE; 
+            const targetW = areaW ;
+            const targetH = areaH ;
+            const offX = (areaW - targetW) / 2;
+            const offY = (areaH - targetH) / 2;
+            ctx.drawImage(gceLogo, (7.5 * TILE_SIZE) + offX, (8 * TILE_SIZE) + offY, targetW, targetH);
+        }
+
+        if (ustStaticLogoLoaded) {
+            ctx.save();
+            const targetW = 2 * TILE_SIZE * 0.8; 
+            const targetH = 1 * TILE_SIZE * 0.8; 
+            const startX = (7 - 1.6 / 2) * TILE_SIZE; 
+            const startY = (10 + (1 - 0.8) / 2) * TILE_SIZE; 
+            ctx.drawImage(ustStaticLogo, startX, startY, targetW, targetH);
+            ctx.restore();
+        }
+
+        // System Interface Updates
+        updateHighestScore();
+        document.getElementById("timeDisplay").textContent = "Time Left: " + timeLeft + "s";
+
+        if (!gameOver && totalDots === 0) {
+            gameOver = true;
+            const bonus = timeLeft * 3;
+            score += bonus;
+            updateHighestScore();
+            setTimeout(() => {
+              alert(`🎉 You Win! Final Score: ${score} (+${bonus} bonus)`);
+            }, 100);
+        }
+    }
+
+    function updateHighestScore() {
+      if (score > highestScore) {
+        highestScore = score;
+        localStorage.setItem("highestScore", highestScore);
+      }
+      let heartsText = "";
+      for (let i = 0; i < lives; i++) heartsText += "❤️";
+      if (lives <= 0) heartsText = "💀";
+
+      document.getElementById("scoreDisplay").textContent = `Score: ${score} | High Score: ${highestScore} | Lives: ${heartsText}`;
+    }
+
+    function startTimer() {
+      const timer = setInterval(() => {
+        if (gameOver) {
+          clearInterval(timer);
+          return;
+        }
+        timeLeft--;
+        if (powerMode && powerTimerSeconds > 0) {
+          powerTimerSeconds--;
+          if (powerTimerSeconds <= 0) {
+            powerMode = false;
+            powerTimerSeconds = 0;
+          }
+        }
+        if (timeLeft <= 0) {
+          gameOver = true;
+          updateHighestScore();
+          alert("⏰ Time's up! Final Score: " + score);
+          clearInterval(timer);
+        }
+      }, 1000);
+    }
+
+    window.onload = () => {
+      createBoard();
+      setupCanvas();
+      drawGame(); 
+    };
+
+    window.addEventListener("resize", () => {
+        setupCanvas();
+        drawGame();
+    });
+
+    // 💡 整合動態彈出輸入框、防錯提示與 12345 恢復密碼的點擊引導核心
+    document.getElementById("startButton").addEventListener("click", async () => {
+      let userInput = prompt("Please paste your Teachable Machine model link:\n(Or enter '12345' to use the default production model)", DEFAULT_URL);
+      
+      if (userInput === null) return; 
+      userInput = userInput.trim();
+
+      if (userInput === "12345") {
+          URL = DEFAULT_URL;
+      } else if (userInput.includes("teachablemachine.withgoogle.com/models/")) {
+          URL = userInput.endsWith("/") ? userInput : userInput + "/";
+      } else {
+          alert("❌ Error in link! The URL is invalid.\n\nFallback triggered: Default configuration loaded automatically.");
+          URL = DEFAULT_URL;
+      }
+
+      document.getElementById("setup-ui").style.display = "none"; 
+      document.getElementById("startButton").innerText = "Initializing...";
+      
+      try {
+          await initModelAndWebcam(); 
+          startTimer();
+          window.requestAnimationFrame(loop);
+      } catch (err) {
+          alert("❌ Model asset parsing failure. Please refresh the grid and confirm layout resources.");
+          document.getElementById("setup-ui").style.display = "inline-block"; 
+      }
+    });
+  </script>
+</body>
+</html>
