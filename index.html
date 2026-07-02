@@ -35,9 +35,9 @@
     }
     #info { margin-top: 10px; color: #ddd; font-size: 1.2rem;}
     
-    /* Sleek Glassmorphism UI Launcher Container */
+    /* Sleek Glassmorphism Gatekeeper Interface Container */
     #setup-ui { 
-        padding: 20px; 
+        padding: 25px; 
         background: rgba(255,255,255,0.05); 
         border-radius: 15px; 
         display: inline-block; 
@@ -45,22 +45,57 @@
         backdrop-filter: blur(5px);
         border: 1px solid rgba(255,255,255,0.1);
         margin-top: 20px;
+        width: 100%;
+        max-width: 380px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .input-label {
+        display: block; 
+        text-align: left; 
+        margin-bottom: 10px; 
+        font-size: 14px; 
+        color: #00ffff;
+        font-weight: bold;
+        text-shadow: 0 0 5px rgba(0,255,255,0.3);
+    }
+
+    #secretKeyInput {
+        width: 100%;
+        padding: 12px;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.2);
+        background: rgba(0,0,0,0.7);
+        color: white;
+        font-size: 16px;
+        letter-spacing: 1px;
+        box-sizing: border-box;
+        transition: all 0.3s;
+        text-align: center;
+    }
+
+    #secretKeyInput:focus {
+        outline: none;
+        border-color: #00ffff;
+        box-shadow: 0 0 15px rgba(0,255,255,0.5);
     }
     
     #startButton { 
-        padding: 12px 28px; 
+        width: 100%;
+        padding: 14px 28px; 
         font-size: 18px; 
         cursor: pointer; 
         background: linear-gradient(45deg, #00ffff, #0033ff); 
         color: #fff; 
         border: none; 
-        border-radius: 5px; 
+        border-radius: 6px; 
         font-weight: bold; 
         box-shadow: 0 0 15px rgba(0,212,255,0.4); 
         transition: all 0.3s ease;
+        margin-top: 15px;
     }
     #startButton:hover { 
-        transform: scale(1.05); 
+        transform: scale(1.02); 
         box-shadow: 0 0 25px rgba(0,212,255,0.8); 
     }
   </style>
@@ -70,10 +105,12 @@
   <h2 style="color: #fff; text-shadow: 0 0 10px cyan; margin-top: 20px;">Pac-Man Controlled by AI Gestures</h2>
   
   <div id="setup-ui">
-    <button id="startButton">Click to Start</button>
+    <label class="input-label" for="secretKeyInput">🔑 Enter Workshop Passcode or GTM Link:</label>
+    <input type="text" id="secretKeyInput" placeholder="Enter key to unlock model..." autocomplete="off" />
+    <button id="startButton">Initialize Verification Loop</button>
   </div>
   
-  <div id="directionDisplay">Waiting for prediction...</div>
+  <div id="directionDisplay">Waiting for authorization key...</div>
   <div id="info">
     <p id="scoreDisplay">Score: 0 | High Score: 0 | Lives: ❤️❤️</p>
     <p id="timeDisplay">Time Left: 80s</p>
@@ -82,8 +119,20 @@
   <canvas id="gameCanvas"></canvas>
 
   <script>
-    // 💡 預設官方模型連結與動態變數配置
-    const DEFAULT_URL = "https://teachablemachine.withgoogle.com/models/i0fcHolgt/";
+    // 🔒 安全加密映射：將密鑰字串暗中綁定至模型目標網址
+    const SECURITY_KEYGROUND = {
+        "1": "https://teachablemachine.withgoogle.com/models/i0fcHolgt/",
+        "2": "https://teachablemachine.withgoogle.com/models/GP0sOp1Qj/",
+        "3": "https://teachablemachine.withgoogle.com/models/cdWQ1Tfob3/",
+        "4": "https://teachablemachine.withgoogle.com/models/gf5uNsL0O/",
+        
+        // 可自由更改或增加更為複雜的密鑰名稱，例如：
+        "pacman-alpha": "https://teachablemachine.withgoogle.com/models/i0fcHolgt/",
+        "pacman-beta": "https://teachablemachine.withgoogle.com/models/GP0sOp1Qj/",
+        "pacman-head": "https://teachablemachine.withgoogle.com/models/cdWQ1Tfob3/",
+        "pacman-range": "https://teachablemachine.withgoogle.com/models/gf5uNsL0O/"
+    };
+
     let URL = ""; 
     let model, webcam, ctx, canvas;
 
@@ -169,7 +218,7 @@
     let timeLeft = 80;
     let lives = 2; 
     let gameOver = false;
-    let invincibilityFrames = 0; // 0.5 秒無敵幀計時（約 30 幀）
+    let invincibilityFrames = 0; 
 
     async function initModelAndWebcam() {
       model = await tmImage.load(URL + "model.json", URL + "metadata.json");
@@ -202,7 +251,6 @@
 
       totalDots = board.flat().filter(cell => [".", "G", "O"].includes(cell)).length;
 
-      // 讓三隻鬼魂隨機出生在合法空地
       const validTiles = [];
       for (let y = 0; y < board.length; y++) {
         for (let x = 0; x < board[y].length; x++) {
@@ -241,14 +289,11 @@
       const direction = highest.className.toLowerCase();
       
       const confidencePercentage = (highest.probability * 100).toFixed(1);
-
-      // 信心值平方比率 (2 * probability^2)
       const confidenceScore = highest.probability;
       let speedFactor = 3 * (confidenceScore * confidenceScore);
 
-      // 🌀 新增：如果吃掉大豆處於無敵模式，移動速度大幅提升 1.5 倍！
       if (powerMode) {
-          speedFactor *= 2; // 你可以自由調整這個數字，倍數越高移速越快
+          speedFactor *= 2; 
       }
 
       document.getElementById("directionDisplay").innerText =
@@ -263,13 +308,11 @@
 
       moveGhost();
 
-      // 每一個畫格遞減無敵時間
       if (invincibilityFrames > 0) {
         invincibilityFrames--;
       }
 
       checkCollision();
-
       drawGame();
       window.requestAnimationFrame(loop);
     }
@@ -286,7 +329,6 @@
       let newX = pacman.x + dx;
       let newY = pacman.y + dy;
 
-      // THE WARP TUNNEL MECHANIC (Row 6 Edges)
       if (newY === 6) {
           if (newX < 0) {
               newX = 13; 
@@ -316,7 +358,6 @@
       }
     }
 
-    // Smart AI Routing Module
     function executeGhostSmartStep(gEntity) {
       const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
       const validMoves = [];
@@ -369,7 +410,6 @@
         }
     }
 
-    // 💡 包含 0.5 秒傷害間隔鎖定的生命衝突系統
     function checkCollision() {
         const handleGhostCatch = (gEntity) => {
             if (pacman.x === gEntity.x && pacman.y === gEntity.y) {
@@ -381,7 +421,6 @@
                     floatingTexts.push({ x: gEntity.x, y: gEntity.y, text: `+${earnedScore}`, life: 40 });
                     respawnGhost(gEntity); 
                 } else {
-                    // 🛡️ 判定只有在無敵冷卻倒數為 0 時才執行扣生命
                     if (invincibilityFrames <= 0) {
                         lives--; 
                         if (lives <= 0) {
@@ -389,7 +428,6 @@
                             updateHighestScore();
                             setTimeout(() => alert("👻 Game Over! You lost all your lives."), 50);
                         } else {
-                            // 設定 0.5 秒傷害防護牆（約 30 畫格）
                             invincibilityFrames = 30; 
                             respawnGhost(gEntity); 
                         }
@@ -418,7 +456,6 @@
         ctx.arc(centerX, centerY, radius, 0.15 * Math.PI, 1.85 * Math.PI);
         ctx.lineTo(centerX, centerY);
         ctx.fill();
-
         ctx.restore();
     }
 
@@ -448,18 +485,15 @@
         ctx.lineTo(startX + tentacleW/2, startY - radius*0.25);
         ctx.lineTo(startX, startY);
         ctx.fill();
-
         ctx.restore();
     }
 
     function drawGame() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // LAYER 1: Ambient Backdrop Underlays
         drawBackgroundPacman(5, 4, 1, "#ffff00"); 
         drawBackgroundGhost(11, 8, 1, "pink");
 
-        // LAYER 2: Optimized Food Pellet Glow Streams
         for (let y = 0; y < board.length; y++) {
             for (let x = 0; x < board[y].length; x++) {
                 const tile = board[y][x];
@@ -495,13 +529,11 @@
             }
         }
 
-        // LAYER 3: Active Mesh Rendering (Pac-Man & Dynamic Ghosts)
         const pX = pacman.x * TILE_SIZE + TILE_SIZE / 2;
         const pY = pacman.y * TILE_SIZE + TILE_SIZE / 2;
         const pRadius = TILE_SIZE * 0.45;
         const bodyDepth = TILE_SIZE * 0.25; 
 
-        // 💡 渲染小精靈（加入無敵狀態高頻率透明閃爍動畫）
         ctx.save();
         if (invincibilityFrames > 0) {
             ctx.globalAlpha = (invincibilityFrames % 10 < 5) ? 0.2 : 1.0; 
@@ -529,10 +561,8 @@
         ctx.beginPath();
         ctx.arc(pX + pRadius * 0.2, pY - pRadius * 0.5, pRadius * 0.15, 0, Math.PI * 2);
         ctx.fill();
-        
         ctx.restore(); 
 
-        // Universal Ghost Render Profile
         const renderGhostEntity = (gObj) => {
             ctx.save();
             const gX = gObj.x * TILE_SIZE;
@@ -560,7 +590,6 @@
         renderGhostEntity(ghost2);
         renderGhostEntity(ghost3);
 
-        // LAYER 4: Render Floating Score Animations
         for (let i = floatingTexts.length - 1; i >= 0; i--) {
             let ft = floatingTexts[i];
             ctx.save();
@@ -575,7 +604,6 @@
             if (ft.life <= 0) floatingTexts.splice(i, 1);
         }
 
-        // LAYER 5: Beautiful Two-Tone Cyber Neon Grids
         for (let y = 0; y < board.length; y++) {
             for (let x = 0; x < board[y].length; x++) {
                 const tile = board[y][x];
@@ -587,9 +615,7 @@
                     ctx.shadowBlur = tile === "U" ? 15 : 5;
                     ctx.shadowColor = tile === "U" ? "#0033ff" : "#00ffff"; 
                     ctx.strokeStyle = tile === "U" ? "#4169E1" : "cyan";
-                    
                     ctx.lineWidth = tile === "U" ? TILE_SIZE * 0.12 : TILE_SIZE * 0.1;
-                    
                     ctx.lineJoin = "round"; 
                     ctx.strokeRect(px + ctx.lineWidth, py + ctx.lineWidth, TILE_SIZE - ctx.lineWidth*2, TILE_SIZE - ctx.lineWidth*2);
                     ctx.restore();
@@ -597,7 +623,6 @@
             }
         }
 
-        // LAYER 6: Institutional Branding Infrastructure
         if (ustImageLoaded) {
             const fullBlockSize = 3 * TILE_SIZE; 
             const targetScale = 0.7;
@@ -640,7 +665,6 @@
             ctx.restore();
         }
 
-        // System Interface Updates
         updateHighestScore();
         document.getElementById("timeDisplay").textContent = "Time Left: " + timeLeft + "s";
 
@@ -701,32 +725,42 @@
         drawGame();
     });
 
-    // 💡 整合動態彈出輸入框、防錯提示與 12345 恢復密碼的點擊引導核心
+    // 💡 整合面板控制與密鑰渠道對應邏輯之啟動處理核心
     document.getElementById("startButton").addEventListener("click", async () => {
-      let userInput = prompt("Please paste your Teachable Machine model link:\n(Or enter '12345' to use the default production model)", DEFAULT_URL);
-      
-      if (userInput === null) return; 
-      userInput = userInput.trim();
+      let rawInput = document.getElementById("secretKeyInput").value.trim();
+      let selectedUrl = "";
 
-      if (userInput === "12345") {
-          URL = DEFAULT_URL;
-      } else if (userInput.includes("teachablemachine.withgoogle.com/models/")) {
-          URL = userInput.endsWith("/") ? userInput : userInput + "/";
-      } else {
-          alert("❌ Error in link! The URL is invalid.\n\nFallback triggered: Default configuration loaded automatically.");
-          URL = DEFAULT_URL;
+      if (rawInput === "") {
+          alert("❌ Entry block cannot be empty! Please provide an access token or custom model link.");
+          return;
       }
 
+      // Check if input matches any of the hidden secure passcodes
+      if (SECURITY_KEYGROUND.hasOwnProperty(rawInput)) {
+          selectedUrl = SECURITY_KEYGROUND[rawInput];
+      } 
+      // If not a token, parse to check if it's a valid GTM URL link
+      else if (rawInput.includes("teachablemachine.withgoogle.com/models/")) {
+          selectedUrl = rawInput.endsWith("/") ? rawInput : rawInput + "/";
+      } 
+      // Handle fully invalid strings
+      else {
+          alert("❌ Validation Denied!\nThe security key or link structure you provided is invalid.");
+          return;
+      }
+
+      URL = selectedUrl;
       document.getElementById("setup-ui").style.display = "none"; 
-      document.getElementById("startButton").innerText = "Initializing...";
+      document.getElementById("directionDisplay").innerText = "Initializing authenticated pipeline model...";
       
       try {
           await initModelAndWebcam(); 
           startTimer();
           window.requestAnimationFrame(loop);
       } catch (err) {
-          alert("❌ Model asset parsing failure. Please refresh the grid and confirm layout resources.");
+          alert("❌ Model structure asset loading crash. Please check your web authorization and link tokens.");
           document.getElementById("setup-ui").style.display = "inline-block"; 
+          document.getElementById("directionDisplay").innerText = "Waiting for configuration setup...";
       }
     });
   </script>
