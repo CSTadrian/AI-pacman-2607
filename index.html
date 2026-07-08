@@ -98,6 +98,88 @@
         transform: scale(1.02); 
         box-shadow: 0 0 25px rgba(0,212,255,0.8); 
     }
+
+    /* 📊 Structural Mode Controls Dashboard Control */
+    #mode-panel {
+        margin: 20px auto;
+        display: none;
+        max-width: 600px;
+        background: rgba(255, 255, 255, 0.03);
+        padding: 10px;
+        border-radius: 30px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .mode-btn {
+        padding: 12px 30px;
+        font-size: 15px;
+        cursor: pointer;
+        background: transparent;
+        color: rgba(255,255,255,0.6);
+        border: none;
+        border-radius: 25px;
+        font-weight: bold;
+        transition: all 0.3s;
+        margin: 0 5px;
+    }
+    .mode-btn.active {
+        background: linear-gradient(90deg, #00ffff, #0033ff);
+        color: white;
+        box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);
+    }
+
+    /* 🎮 Game Execution Controls Panel */
+    #game-controls {
+        display: none;
+        margin: 15px auto;
+    }
+    .action-btn {
+        padding: 12px 35px;
+        font-size: 16px;
+        cursor: pointer;
+        color: white;
+        border: none;
+        border-radius: 25px;
+        font-weight: bold;
+        transition: all 0.3s;
+        margin: 5px;
+    }
+    .action-btn:hover {
+        transform: scale(1.05);
+    }
+
+    /* XAI Container Display Components */
+    #xai-workspace {
+        display: none;
+        margin: 15px auto;
+        max-width: 500px;
+    }
+    #xaiCanvasContainer {
+        position: relative;
+        width: 224px;
+        height: 224px;
+        margin: 15px auto;
+        border: 3px solid #ff0055;
+        border-radius: 12px;
+        box-shadow: 0 0 20px rgba(255, 0, 85, 0.3);
+        overflow: hidden;
+    }
+    #xaiOverlayCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 10;
+        pointer-events: none;
+    }
+    #xaiDiagnosticMsg {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #ffcc00;
+        font-style: italic;
+    }
+    #gameCanvas {
+        display: none; 
+    }
   </style>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
@@ -109,6 +191,25 @@
     <input type="text" id="secretKeyInput" placeholder="Enter key to unlock model..." autocomplete="off" />
     <button id="startButton">Initialize Verification Loop</button>
   </div>
+
+  <div id="mode-panel">
+    <button id="modeScannerBtn" class="mode-btn active">Mode 1: Live Diagnostic Scanner</button>
+    <button id="modeGameBtn" class="mode-btn">Mode 2: Play Pac-Man Game</button>
+  </div>
+
+  <!-- 🎮 遊戲內置狀態操作控制面板（動態切換開始/重賽） -->
+  <div id="game-controls">
+    <button id="gameStartActionBtn" class="action-btn" style="background: linear-gradient(45deg, #00ff00, #009900); box-shadow: 0 0 15px rgba(0,255,0,0.4);">▶️ Start Game</button>
+    <button id="gameRestartActionBtn" class="action-btn" style="display: none; background: linear-gradient(45deg, #ff9900, #ff5500); box-shadow: 0 0 15px rgba(255,153,0,0.4);">🔄 Restart Game</button>
+  </div>
+
+  <div id="xai-workspace">
+    <div id="xaiCanvasContainer">
+      <canvas id="xaiSourceCanvas" width="224" height="224" style="position:absolute; top:0; left:0; z-index:5;"></canvas>
+      <canvas id="xaiOverlayCanvas" width="224" height="224"></canvas>
+    </div>
+    <div id="xaiDiagnosticMsg">Scanning environmental noise distributions... Please mirror your game movements to verify model attention blocks.</div>
+  </div>
   
   <div id="directionDisplay">Waiting for authorization key...</div>
   <div id="info">
@@ -119,14 +220,11 @@
   <canvas id="gameCanvas"></canvas>
 
   <script>
-    // 🔒 安全加密映射：將密鑰字串暗中綁定至模型目標網址
     const SECURITY_KEYGROUND = {
-        "1": "https://teachablemachine.withgoogle.com/models/i0fcHolgt/",
+        "1": "https://teachablemachine.withgoogle.com/models/1JVWRRj6D/",
         "2": "https://teachablemachine.withgoogle.com/models/GP0sOp1Qj/",
         "3": "https://teachablemachine.withgoogle.com/models/cdWQ1Tfob3/",
-        "4": "https://teachablemachine.withgoogle.com/models/gf5uNsL0O/",
-        
-        // 可自由更改或增加更為複雜的密鑰名稱，例如：
+        "4": "https://teachablemachine.withgoogle.com/models/H2bn8qiSV/",
         "pacman-alpha": "https://teachablemachine.withgoogle.com/models/i0fcHolgt/",
         "pacman-beta": "https://teachablemachine.withgoogle.com/models/GP0sOp1Qj/",
         "pacman-head": "https://teachablemachine.withgoogle.com/models/cdWQ1Tfob3/",
@@ -135,8 +233,12 @@
 
     let URL = ""; 
     let model, webcam, ctx, canvas;
+    
+    // Core Engine State Switch Variables
+    let currentMode = "scanner"; // "scanner" = Mode 1, "game" = Mode 2
+    let gameStarted = false;     // 追蹤 Mode 2 遊戲是否正式點擊開始
+    let scanThrottleCounter = 0; 
 
-    // Stable 14x15 Map Matrix System Layout
     const layout = [
       "UUUUUUUUUUUUUU",
       "U...G...G....U",
@@ -158,15 +260,11 @@
     let rows = layout.length+1;
     let cols = layout[0].length+1;
 
-    // Entities
     let pacman = { x: 1, y: 1 };
-    
-    // Configured for Three Independent Ghosts
     let ghost = { x: 6, y: 5 };   let ghostStart = { x: 6, y: 5 };
     let ghost2 = { x: 8, y: 5 };  let ghost2Start = { x: 8, y: 5 };
     let ghost3 = { x: 10, y: 5 }; let ghost3Start = { x: 10, y: 5 };
 
-    // Graphics Pipeline Asset Storage
     const ghostImage = new Image();
     ghostImage.src = "pinky.jpeg"; 
     let ghostImageLoaded = false;
@@ -197,21 +295,18 @@
     let ustStaticLogoLoaded = false;
     ustStaticLogo.onload = () => { ustStaticLogoLoaded = true; };
 
-    // Frame Speed Mechanics
     let moveCooldown = 0;
-    const MOVE_DELAY = 15; 
+    const MOVE_DELAY = 10; 
 
-    let ghostCooldown = 0;  const GHOST_DELAY = 50;  // Slow Ghost
-    let ghost2Cooldown = 0; const GHOST2_DELAY = 30; // Medium Ghost
-    let ghost3Cooldown = 0; const GHOST3_DELAY = 15;  // Fast Ghost
+    let ghostCooldown = 0;  const GHOST_DELAY = 50;
+    let ghost2Cooldown = 0; const GHOST2_DELAY = 30;
+    let ghost3Cooldown = 0; const GHOST3_DELAY = 15;
 
-    // Global Game State Variables
     let powerMode = false;
     let powerTimerSeconds = 0; 
     let ghostCombo = 0;       
     let floatingTexts = [];   
 
-    // Runtime Metrics
     let score = 0;
     let highestScore = localStorage.getItem("highestScore") || 0;
     let totalDots = 0;
@@ -219,6 +314,7 @@
     let lives = 2; 
     let gameOver = false;
     let invincibilityFrames = 0; 
+    let timerIntervalId = null; 
 
     async function initModelAndWebcam() {
       model = await tmImage.load(URL + "model.json", URL + "metadata.json");
@@ -227,18 +323,19 @@
       await webcam.play();
       webcam.canvas.style.display = "none";
       document.body.appendChild(webcam.canvas);
+      
+      document.getElementById("mode-panel").style.display = "block";
+      switchEngineMode("scanner");
     }
 
     function createBoard() {
       board = layout.map(row => row.split(""));
-
       const dotPositions = [];
       for (let y = 0; y < board.length; y++) {
         for (let x = 0; x < board[y].length; x++) {
           if (board[y][x] === ".") dotPositions.push({ x, y });
         }
       }
-
       for (let i = dotPositions.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [dotPositions[i], dotPositions[j]] = [dotPositions[j], dotPositions[i]];
@@ -248,15 +345,12 @@
         const p = dotPositions[i];
         board[p.y][p.x] = "O";
       }
-
       totalDots = board.flat().filter(cell => [".", "G", "O"].includes(cell)).length;
 
       const validTiles = [];
       for (let y = 0; y < board.length; y++) {
         for (let x = 0; x < board[y].length; x++) {
-          if (board[y][x] !== "W" && board[y][x] !== "U") {
-            validTiles.push({ x, y });
-          }
+          if (board[y][x] !== "W" && board[y][x] !== "U") validTiles.push({ x, y });
         }
       }
       if (validTiles.length > 3) {
@@ -270,56 +364,163 @@
     function setupCanvas() {
         canvas = document.getElementById("gameCanvas");
         ctx = canvas.getContext("2d");
-
         const availableWidth = window.innerWidth * 0.9;
         TILE_SIZE = Math.floor(availableWidth / cols);
-
         canvas.width = TILE_SIZE * cols;
         canvas.height = TILE_SIZE * rows;
-
         canvas.style.width = (TILE_SIZE * cols) + "px";
         canvas.style.height = (TILE_SIZE * rows) + "px";
     }
 
+    function switchEngineMode(targetMode) {
+        currentMode = targetMode;
+        const scanBtn = document.getElementById("modeScannerBtn");
+        const gameBtn = document.getElementById("modeGameBtn");
+        const xaiWorkspace = document.getElementById("xai-workspace");
+        const playCanvas = document.getElementById("gameCanvas");
+        const gameControls = document.getElementById("game-controls");
+
+        if (currentMode === "scanner") {
+            gameBtn.classList.remove("active");
+            scanBtn.classList.add("active");
+            playCanvas.style.display = "none";
+            xaiWorkspace.style.display = "block";
+            gameControls.style.display = "none";
+            
+            if (timerIntervalId) {
+                clearInterval(timerIntervalId);
+                timerIntervalId = null;
+            }
+        } else {
+            scanBtn.classList.remove("active");
+            gameBtn.classList.add("active");
+            xaiWorkspace.style.display = "none";
+            playCanvas.style.display = "block";
+            gameControls.style.display = "block";
+            
+            // 根據當前遊戲生命週期控制按鈕顯示
+            if (gameOver) {
+                document.getElementById("gameStartActionBtn").style.display = "none";
+                document.getElementById("gameRestartActionBtn").style.display = "inline-block";
+            } else if (!gameStarted) {
+                document.getElementById("gameStartActionBtn").style.display = "inline-block";
+                document.getElementById("gameRestartActionBtn").style.display = "none";
+            } else {
+                document.getElementById("gameStartActionBtn").style.display = "none";
+                document.getElementById("gameRestartActionBtn").style.display = "none";
+            }
+
+            document.getElementById("xaiOverlayCanvas").getContext("2d").clearRect(0, 0, 224, 224);
+            document.getElementById("xaiSourceCanvas").getContext("2d").clearRect(0, 0, 224, 224);
+        }
+    }
+
     async function loop() {
-      if (gameOver) return;
       webcam.update();
+
       const prediction = await model.predict(webcam.canvas);
       const highest = prediction.reduce((a, b) => a.probability > b.probability ? a : b);
       const direction = highest.className.toLowerCase();
-      
       const confidencePercentage = (highest.probability * 100).toFixed(1);
-      const confidenceScore = highest.probability;
-      let speedFactor = 3 * (confidenceScore * confidenceScore);
 
-      if (powerMode) {
-          speedFactor *= 2; 
-      }
-
-      document.getElementById("directionDisplay").innerText =
-        `Predicted: ${direction.toUpperCase()} (${confidencePercentage}%)` + (powerMode ? ` | POWER MODE ${powerTimerSeconds}s` : "");
-
-      if (moveCooldown <= 0) {
-        movePacman(direction);
-        moveCooldown = MOVE_DELAY;
+      if (currentMode === "scanner") {
+          // ── MODE 1: LIVE DIAGNOSTIC SCANNER ARCHITECTURE ──
+          document.getElementById("directionDisplay").innerText = 
+              `🔍 Scanner Diagnostic View: [${direction.toUpperCase()}] (${confidencePercentage}%)`;
+          
+          scanThrottleCounter++;
+          if (scanThrottleCounter % 4 === 0) {
+              await processLiveXAIScan(direction, highest.probability);
+          }
       } else {
-        moveCooldown -= speedFactor; 
+          // ── MODE 2: ACTIVE GAMEPLAY ENGINE ARCHITECTURE ──
+          if (gameStarted && !gameOver) {
+              let speedFactor = 3 * (highest.probability * highest.probability);
+              if (powerMode) speedFactor *= 2; 
+
+              document.getElementById("directionDisplay").innerText =
+                `Predicted: ${direction.toUpperCase()} (${confidencePercentage}%)` + (powerMode ? ` | POWER MODE ${powerTimerSeconds}s` : "");
+
+              if (moveCooldown <= 0) {
+                movePacman(direction);
+                moveCooldown = MOVE_DELAY;
+              } else {
+                moveCooldown -= speedFactor; 
+              }
+
+              moveGhost();
+              if (invincibilityFrames > 0) invincibilityFrames--;
+
+              checkCollision();
+          } else if (!gameStarted && !gameOver) {
+              document.getElementById("directionDisplay").innerText = `🎮 Mode 2: Game Ready! Click "Start Game" below to begin.`;
+          }
+          drawGame();
       }
 
-      moveGhost();
-
-      if (invincibilityFrames > 0) {
-        invincibilityFrames--;
-      }
-
-      checkCollision();
-      drawGame();
       window.requestAnimationFrame(loop);
     }
 
+    async function processLiveXAIScan(targetClass, baselineProbability) {
+        const srcCanvas = document.getElementById("xaiSourceCanvas");
+        const overlayCanvas = document.getElementById("xaiOverlayCanvas");
+        const sCtx = srcCanvas.getContext("2d");
+        const oCtx = overlayCanvas.getContext("2d");
+        const msgDiv = document.getElementById("xaiDiagnosticMsg");
+
+        sCtx.drawImage(webcam.canvas, 0, 0, 224, 224);
+        oCtx.clearRect(0, 0, 224, 224);
+
+        const gridSize = 6;
+        const patchSize = 224 / gridSize;
+        let maxDrop = 0;
+        let matrix = [];
+
+        const offscreenCanvas = document.createElement("canvas");
+        offscreenCanvas.width = 224;
+        offscreenCanvas.height = 224;
+        const oContext = offscreenCanvas.getContext("2d");
+
+        for (let gy = 0; gy < gridSize; gy++) {
+            matrix[gy] = [];
+            for (let gx = 0; gx < gridSize; gx++) {
+                oContext.drawImage(srcCanvas, 0, 0);
+                oContext.fillStyle = "#808080"; 
+                oContext.fillRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
+
+                const newPredictions = await model.predict(offscreenCanvas);
+                const matchingPred = newPredictions.find(p => p.className === targetClass);
+                const newProb = matchingPred ? matchingPred.probability : 0;
+
+                const probDrop = Math.max(0, baselineProbability - newProb);
+                matrix[gy][gx] = probDrop;
+                if (probDrop > maxDrop) maxDrop = probDrop;
+            }
+        }
+
+        for (let gy = 0; gy < gridSize; gy++) {
+            for (let gx = 0; gx < gridSize; gx++) {
+                const drop = matrix[gy][gx];
+                const intensity = maxDrop > 0 ? (drop / maxDrop) : 0;
+
+                if (intensity > 0.20) {
+                    oCtx.save();
+                    oCtx.fillStyle = `rgba(255, 0, 85, ${intensity * 0.70})`;
+                    oCtx.fillRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
+                    oCtx.strokeStyle = "rgba(0, 255, 255, 0.15)";
+                    oCtx.strokeRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
+                    oCtx.restore();
+                }
+            }
+        }
+        msgDiv.innerHTML = `🎯 Real-time Target: <b>${targetClass.toUpperCase()}</b>. Red tiles track active model attention weights. Clean backgrounds minimize false vector highlights!`;
+    }
+
+    document.getElementById("modeScannerBtn").addEventListener("click", () => switchEngineMode("scanner"));
+    document.getElementById("modeGameBtn").addEventListener("click", () => switchEngineMode("game"));
+
     function movePacman(direction) {
       if (direction === "stop") return;
-
       let dx = 0, dy = 0;
       if (direction === "up") dy = -1;
       if (direction === "down") dy = 1;
@@ -330,11 +531,8 @@
       let newY = pacman.y + dy;
 
       if (newY === 6) {
-          if (newX < 0) {
-              newX = 13; 
-          } else if (newX > 13) {
-              newX = 0;  
-          }
+          if (newX < 0) newX = 13; 
+          else if (newX > 13) newX = 0;  
       }
 
       if (!board[newY] || !board[newY][newX]) return;
@@ -361,7 +559,6 @@
     function executeGhostSmartStep(gEntity) {
       const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
       const validMoves = [];
-
       for (const [dx, dy] of dirs) {
         const nx = gEntity.x + dx;
         const ny = gEntity.y + dy;
@@ -370,17 +567,13 @@
           validMoves.push({ x: nx, y: ny, dist: distance });
         }
       }
-
       if (validMoves.length === 0) return;
-
       if (powerMode) {
         validMoves.sort((a, b) => b.dist - a.dist);
       } else {
         validMoves.sort((a, b) => a.dist - b.dist);
       }
-
       const chosenMove = (Math.random() < 0.2) ? validMoves[Math.floor(Math.random() * validMoves.length)] : validMoves[0];
-      
       gEntity.x = chosenMove.x;
       gEntity.y = chosenMove.y;
     }
@@ -417,7 +610,6 @@
                     ghostCombo++;
                     const earnedScore = 200 * ghostCombo; 
                     score += earnedScore;
-                    
                     floatingTexts.push({ x: gEntity.x, y: gEntity.y, text: `+${earnedScore}`, life: 40 });
                     respawnGhost(gEntity); 
                 } else {
@@ -426,6 +618,9 @@
                         if (lives <= 0) {
                             gameOver = true;
                             updateHighestScore();
+                            // 觸發重置按鈕
+                            document.getElementById("gameStartActionBtn").style.display = "none";
+                            document.getElementById("gameRestartActionBtn").style.display = "inline-block";
                             setTimeout(() => alert("👻 Game Over! You lost all your lives."), 50);
                         } else {
                             invincibilityFrames = 30; 
@@ -435,7 +630,6 @@
                 }
             }
         };
-
         handleGhostCatch(ghost);   
         handleGhostCatch(ghost2); 
         handleGhostCatch(ghost3); 
@@ -447,11 +641,9 @@
         ctx.shadowBlur = 40;
         ctx.shadowColor = color;
         ctx.fillStyle = color;
-
         const centerX = xCol * TILE_SIZE;
         const centerY = yRow * TILE_SIZE;
         const radius = (TILE_SIZE * sizeMultiplier) / 2;
-
         ctx.beginPath();
         ctx.arc(centerX, centerY, radius, 0.15 * Math.PI, 1.85 * Math.PI);
         ctx.lineTo(centerX, centerY);
@@ -465,18 +657,15 @@
         ctx.shadowBlur = 40;
         ctx.shadowColor = color;
         ctx.fillStyle = color;
-
         const size = TILE_SIZE * sizeMultiplier;
         const radius = size / 2;
         const startX = (xCol * TILE_SIZE) - radius;
         const startY = (yRow * TILE_SIZE) + radius; 
-
         ctx.beginPath();
         ctx.moveTo(startX, startY);
         ctx.lineTo(startX, startY - radius); 
         ctx.arc(startX + radius, startY - radius, radius, Math.PI, 0); 
         ctx.lineTo(startX + size, startY); 
-        
         const tentacleW = size / 3;
         ctx.lineTo(startX + size - tentacleW/2, startY - radius*0.25);
         ctx.lineTo(startX + size - tentacleW, startY);
@@ -490,7 +679,6 @@
 
     function drawGame() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
         drawBackgroundPacman(5, 4, 1, "#ffff00"); 
         drawBackgroundGhost(11, 8, 1, "pink");
 
@@ -501,16 +689,12 @@
                 const dy = y * TILE_SIZE + TILE_SIZE/2;
                 if (tile === ".") {
                     ctx.save();
-                    ctx.shadowBlur = 5;
-                    ctx.shadowColor = "white";
-                    ctx.fillStyle = "white";
+                    ctx.shadowBlur = 5; ctx.shadowColor = "white"; ctx.fillStyle = "white";
                     ctx.beginPath(); ctx.arc(dx, dy, Math.max(1, TILE_SIZE * 0.05), 0, 2*Math.PI); ctx.fill();
                     ctx.restore();
                 } else if (tile === "G") {
                     ctx.save();
-                    ctx.shadowBlur = 10;
-                    ctx.shadowColor = "#00ff00";
-                    ctx.fillStyle = "#00ff00";
+                    ctx.shadowBlur = 10; ctx.shadowColor = "#00ff00"; ctx.fillStyle = "#00ff00";
                     ctx.beginPath(); ctx.arc(dx, dy, Math.max(2, TILE_SIZE * 0.09), 0, 2*Math.PI); ctx.fill();
                     ctx.restore();
                 } else if (tile === "O") {
@@ -519,9 +703,7 @@
                         ctx.drawImage(redBirdImage, dx - birdSize/2, dy - birdSize/2, birdSize, birdSize);
                     } else {
                         ctx.save();
-                        ctx.shadowBlur = 10;
-                        ctx.shadowColor = "orange";
-                        ctx.fillStyle = "orange";
+                        ctx.shadowBlur = 10; ctx.shadowColor = "orange"; ctx.fillStyle = "orange";
                         ctx.beginPath(); ctx.arc(dx, dy, Math.max(5, TILE_SIZE*0.22), 0, 2*Math.PI); ctx.fill();
                         ctx.restore();
                     }
@@ -538,54 +720,37 @@
         if (invincibilityFrames > 0) {
             ctx.globalAlpha = (invincibilityFrames % 10 < 5) ? 0.2 : 1.0; 
         }
-
         ctx.fillStyle = "rgba(0,0,0,0.4)";
-        ctx.beginPath();
-        ctx.arc(pX + 4, pY + 4 + bodyDepth, pRadius, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(pX + 4, pY + 4 + bodyDepth, pRadius, 0, Math.PI * 2); ctx.fill();
 
         ctx.fillStyle = "#ccaa00"; 
         for (let i = 0; i < bodyDepth; i++) {
-            ctx.beginPath();
-            ctx.arc(pX, pY + i, pRadius, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(pX, pY + i, pRadius, 0, Math.PI * 2); ctx.fill();
         }
-
         ctx.fillStyle = "#ffff00"; 
-        ctx.beginPath();
-        ctx.arc(pX, pY, pRadius, 0.2 * Math.PI, 1.8 * Math.PI); 
-        ctx.lineTo(pX, pY);
-        ctx.fill();
-
+        ctx.beginPath(); ctx.arc(pX, pY, pRadius, 0.2 * Math.PI, 1.8 * Math.PI); ctx.lineTo(pX, pY); ctx.fill();
         ctx.fillStyle = "black";
-        ctx.beginPath();
-        ctx.arc(pX + pRadius * 0.2, pY - pRadius * 0.5, pRadius * 0.15, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(pX + pRadius * 0.2, pY - pRadius * 0.5, pRadius * 0.15, 0, Math.PI * 2); ctx.fill();
         ctx.restore(); 
 
         const renderGhostEntity = (gObj) => {
             ctx.save();
             const gX = gObj.x * TILE_SIZE;
             const gY = gObj.y * TILE_SIZE;
-            
             if (powerMode) {
                 if (ghostImageLoaded) {
-                    ctx.shadowBlur = 20;
-                    ctx.shadowColor = "pink";
+                    ctx.shadowBlur = 20; ctx.shadowColor = "pink";
                     ctx.drawImage(ghostImage, gX, gY, TILE_SIZE, TILE_SIZE);
                 }
             } else {
                 ctx.fillStyle = "white"; 
                 ctx.font = `${TILE_SIZE * 1.1}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.shadowBlur = 25;
-                ctx.shadowColor = "#cc00ff";
+                ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.shadowBlur = 25; ctx.shadowColor = "#cc00ff";
                 ctx.fillText("👻", gX + TILE_SIZE / 2, gY + TILE_SIZE / 2);
             }
             ctx.restore();
         };
-
         renderGhostEntity(ghost);
         renderGhostEntity(ghost2);
         renderGhostEntity(ghost3);
@@ -595,9 +760,7 @@
             ctx.save();
             ctx.fillStyle = `rgba(0, 255, 255, ${ft.life / 40})`; 
             ctx.font = `bold ${TILE_SIZE * 1.2}px 'Segoe UI', sans-serif`;
-            ctx.textAlign = "center";
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = "cyan";
+            ctx.textAlign = "center"; ctx.shadowBlur = 15; ctx.shadowColor = "cyan";
             ctx.fillText(ft.text, ft.x * TILE_SIZE + TILE_SIZE/2, ft.y * TILE_SIZE - (40 - ft.life));
             ctx.restore();
             ft.life--;
@@ -610,10 +773,8 @@
                 if (tile === "U" || tile === "W") {
                     const px = x * TILE_SIZE;
                     const py = y * TILE_SIZE;
-                    
                     ctx.save();
-                    ctx.shadowBlur = tile === "U" ? 15 : 5;
-                    ctx.shadowColor = tile === "U" ? "#0033ff" : "#00ffff"; 
+                    ctx.shadowBlur = tile === "U" ? 15 : 5; ctx.shadowColor = tile === "U" ? "#0033ff" : "#00ffff"; 
                     ctx.strokeStyle = tile === "U" ? "#4169E1" : "cyan";
                     ctx.lineWidth = tile === "U" ? TILE_SIZE * 0.12 : TILE_SIZE * 0.1;
                     ctx.lineJoin = "round"; 
@@ -629,38 +790,25 @@
             const logoWidth = fullBlockSize * targetScale;
             const logoHeight = fullBlockSize * targetScale;
             const offset = 0.5 * (fullBlockSize - logoWidth);
-
             const startX = (6 * TILE_SIZE) + offset;
             const startY = (2 * TILE_SIZE) + offset;
             ctx.drawImage(ustImage, startX, startY, logoWidth, logoHeight);
         }
-
         if (logo35Loaded) {
-            const areaW = 2 * TILE_SIZE; 
-            const areaH = 2 * TILE_SIZE; 
-            const targetW = areaW * 0.7;
-            const targetH = areaH * 0.7;
-            const offX = (areaW - targetW) / 2;
-            const offY = (areaH - targetH) / 2;
+            const areaW = 2 * TILE_SIZE; const areaH = 2 * TILE_SIZE; 
+            const targetW = areaW * 0.7; const targetH = areaH * 0.7;
+            const offX = (areaW - targetW) / 2; const offY = (areaH - targetH) / 2;
             ctx.drawImage(logo35, (2 * TILE_SIZE) + offX, (8 * TILE_SIZE) + offY, targetW, targetH);
         }
-
         if (gceLogoLoaded) {
-            const areaW = 2 * TILE_SIZE; 
-            const areaH = 1 * TILE_SIZE; 
-            const targetW = areaW ;
-            const targetH = areaH ;
-            const offX = (areaW - targetW) / 2;
-            const offY = (areaH - targetH) / 2;
-            ctx.drawImage(gceLogo, (7.5 * TILE_SIZE) + offX, (8 * TILE_SIZE) + offY, targetW, targetH);
+            const areaW = 2 * TILE_SIZE; const areaH = 1 * TILE_SIZE; 
+            const targetW = areaW ; const targetH = areaH ;
+            ctx.drawImage(gceLogo, (7.5 * TILE_SIZE), (8 * TILE_SIZE), targetW, targetH);
         }
-
         if (ustStaticLogoLoaded) {
             ctx.save();
-            const targetW = 2 * TILE_SIZE * 0.8; 
-            const targetH = 1 * TILE_SIZE * 0.8; 
-            const startX = (7 - 1.6 / 2) * TILE_SIZE; 
-            const startY = (10 + (1 - 0.8) / 2) * TILE_SIZE; 
+            const targetW = 2 * TILE_SIZE * 0.8; const targetH = 1 * TILE_SIZE * 0.8; 
+            const startX = (7 - 1.6 / 2) * TILE_SIZE; const startY = (10 + (1 - 0.8) / 2) * TILE_SIZE; 
             ctx.drawImage(ustStaticLogo, startX, startY, targetW, targetH);
             ctx.restore();
         }
@@ -673,9 +821,10 @@
             const bonus = timeLeft * 3;
             score += bonus;
             updateHighestScore();
-            setTimeout(() => {
-              alert(`🎉 You Win! Final Score: ${score} (+${bonus} bonus)`);
-            }, 100);
+            // 贏遊戲時同樣激活重賽機制
+            document.getElementById("gameStartActionBtn").style.display = "none";
+            document.getElementById("gameRestartActionBtn").style.display = "inline-block";
+            setTimeout(() => alert(`🎉 You Win! Final Score: ${score} (+${bonus} bonus)`), 100);
         }
     }
 
@@ -687,32 +836,63 @@
       let heartsText = "";
       for (let i = 0; i < lives; i++) heartsText += "❤️";
       if (lives <= 0) heartsText = "💀";
-
       document.getElementById("scoreDisplay").textContent = `Score: ${score} | High Score: ${highestScore} | Lives: ${heartsText}`;
     }
 
     function startTimer() {
-      const timer = setInterval(() => {
-        if (gameOver) {
-          clearInterval(timer);
-          return;
-        }
+      if (timerIntervalId) clearInterval(timerIntervalId);
+      timerIntervalId = setInterval(() => {
+        if (gameOver || currentMode === "scanner" || !gameStarted) return; 
         timeLeft--;
         if (powerMode && powerTimerSeconds > 0) {
           powerTimerSeconds--;
-          if (powerTimerSeconds <= 0) {
-            powerMode = false;
-            powerTimerSeconds = 0;
-          }
+          if (powerTimerSeconds <= 0) powerMode = false;
         }
         if (timeLeft <= 0) {
           gameOver = true;
           updateHighestScore();
+          document.getElementById("gameStartActionBtn").style.display = "none";
+          document.getElementById("gameRestartActionBtn").style.display = "inline-block";
           alert("⏰ Time's up! Final Score: " + score);
-          clearInterval(timer);
+          clearInterval(timerIntervalId);
         }
       }, 1000);
     }
+
+    // 🎮 Mode 2 專屬遊戲狀態控制按鈕群聯動邏輯
+    document.getElementById("gameStartActionBtn").addEventListener("click", () => {
+        if (!gameOver && !gameStarted) {
+            gameStarted = true;
+            document.getElementById("gameStartActionBtn").style.display = "none";
+            startTimer();
+        }
+    });
+
+    document.getElementById("gameRestartActionBtn").addEventListener("click", () => {
+        // 全面重設底層數據矩陣
+        score = 0;
+        timeLeft = 80;
+        lives = 2;
+        gameOver = false;
+        gameStarted = false;
+        powerMode = false;
+        powerTimerSeconds = 0;
+        ghostCombo = 0;
+        floatingTexts = [];
+        invincibilityFrames = 0;
+        pacman = { x: 1, y: 1 };
+        
+        createBoard();
+        setupCanvas();
+        updateHighestScore();
+        
+        // 切換按鈕狀態
+        document.getElementById("gameStartActionBtn").style.display = "inline-block";
+        document.getElementById("gameRestartActionBtn").style.display = "none";
+        document.getElementById("directionDisplay").innerText = `🎮 Mode 2: Game Ready! Click "Start Game" below to begin.`;
+        
+        drawGame();
+    });
 
     window.onload = () => {
       createBoard();
@@ -722,10 +902,9 @@
 
     window.addEventListener("resize", () => {
         setupCanvas();
-        drawGame();
+        if (currentMode === "game") drawGame();
     });
 
-    // 💡 整合面板控制與密鑰渠道對應邏輯之啟動處理核心
     document.getElementById("startButton").addEventListener("click", async () => {
       let rawInput = document.getElementById("secretKeyInput").value.trim();
       let selectedUrl = "";
@@ -734,17 +913,11 @@
           alert("❌ Entry block cannot be empty! Please provide an access token or custom model link.");
           return;
       }
-
-      // Check if input matches any of the hidden secure passcodes
       if (SECURITY_KEYGROUND.hasOwnProperty(rawInput)) {
           selectedUrl = SECURITY_KEYGROUND[rawInput];
-      } 
-      // If not a token, parse to check if it's a valid GTM URL link
-      else if (rawInput.includes("teachablemachine.withgoogle.com/models/")) {
+      } else if (rawInput.includes("teachablemachine.withgoogle.com/models/")) {
           selectedUrl = rawInput.endsWith("/") ? rawInput : rawInput + "/";
-      } 
-      // Handle fully invalid strings
-      else {
+      } else {
           alert("❌ Validation Denied!\nThe security key or link structure you provided is invalid.");
           return;
       }
@@ -755,7 +928,6 @@
       
       try {
           await initModelAndWebcam(); 
-          startTimer();
           window.requestAnimationFrame(loop);
       } catch (err) {
           alert("❌ Model structure asset loading crash. Please check your web authorization and link tokens.");
