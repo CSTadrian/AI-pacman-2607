@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8"> 
-  <title>Pac-Man AI Game (GTM) - Split Horizon UI</title>
+  <title>Pac-Man AI Game (GTM) - Ultimate Live Production Edition</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
@@ -27,13 +27,13 @@
     }
     #directionDisplay { 
         font-size: 2.5vw; 
-        margin-top: 15px; 
+        margin-top: 10px; 
         color: #0f0; 
         text-shadow: 0 0 10px #0f0, 0 0 20px #0f0;
         font-weight: bold;
         letter-spacing: 2px;
     }
-    #info { margin-top: 5px; color: #ddd; font-size: 1.2rem;}
+    #info { margin-top: 10px; color: #ddd; font-size: 1.2rem;}
     
     /* Sleek Glassmorphism Gatekeeper Interface Container */
     #setup-ui { 
@@ -148,44 +148,17 @@
         transform: scale(1.05);
     }
 
-    /* Unified Display Layout Wrapper Container */
-    #game-arena {
-        display: flex;
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 20px;
-        margin: 20px auto;
-        width: 95%;
-        max-width: 1440px;
-        box-sizing: border-box;
-    }
-
-    /* XAI Left-Hand Column Stack Allocation (Around 30% Width Bounds) */
+    /* XAI Container Display Components */
     #xai-workspace {
         display: none;
-        flex: 0 0 28%; 
-        box-sizing: border-box;
-        background: rgba(255, 255, 255, 0.02);
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid rgba(255,255,255,0.05);
+        margin: 15px auto;
+        max-width: 500px;
     }
-    
-    /* Dedicated Game Engine Right-Hand Column Target (Around 70% Width Bounds) */
-    #game-container {
-        flex: 0 0 70%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        box-sizing: border-box;
-    }
-
     #xaiCanvasContainer {
         position: relative;
         width: 224px;
         height: 224px;
-        margin: 0 auto 15px auto;
+        margin: 15px auto;
         border: 3px solid #ff0055;
         border-radius: 12px;
         box-shadow: 0 0 20px rgba(255, 0, 85, 0.3);
@@ -203,24 +176,9 @@
         font-size: 14px;
         color: #ffcc00;
         font-style: italic;
-        text-align: left;
-        line-height: 1.4;
     }
     #gameCanvas {
         display: none; 
-        margin: 0 auto;
-    }
-
-    /* Responsive Mobile Overrides */
-    @media (max-width: 800px) {
-        #game-arena {
-            flex-direction: column-reverse;
-            align-items: center;
-        }
-        #xai-workspace, #game-container {
-            flex: 0 0 100%;
-            width: 100%;
-        }
     }
   </style>
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -239,33 +197,27 @@
     <button id="modeGameBtn" class="mode-btn">Mode 2: Play Pac-Man Game</button>
   </div>
 
+  <!-- 🎮 遊戲內置狀態操作控制面板（動態切換開始/重賽） -->
   <div id="game-controls">
     <button id="gameStartActionBtn" class="action-btn" style="background: linear-gradient(45deg, #00ff00, #009900); box-shadow: 0 0 15px rgba(0,255,0,0.4);">▶️ Start Game</button>
     <button id="gameRestartActionBtn" class="action-btn" style="display: none; background: linear-gradient(45deg, #ff9900, #ff5500); box-shadow: 0 0 15px rgba(255,153,0,0.4);">🔄 Restart Game</button>
   </div>
 
+  <div id="xai-workspace">
+    <div id="xaiCanvasContainer">
+      <canvas id="xaiSourceCanvas" width="224" height="224" style="position:absolute; top:0; left:0; z-index:5;"></canvas>
+      <canvas id="xaiOverlayCanvas" width="224" height="224"></canvas>
+    </div>
+    <div id="xaiDiagnosticMsg">Scanning environmental noise distributions... Please mirror your game movements to verify model attention blocks.</div>
+  </div>
+  
   <div id="directionDisplay">Waiting for authorization key...</div>
   <div id="info">
     <p id="scoreDisplay">Score: 0 | High Score: 0 | Lives: ❤️❤️</p>
     <p id="timeDisplay">Time Left: 80s</p>
   </div>
-
-  <div id="game-arena">
-    <div id="xai-workspace">
-      <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #ff0055; text-shadow: 0 0 5px rgba(255,0,85,0.3);">🧠 Real-time Model Attention</h3>
-      <div id="xaiCanvasContainer">
-        <canvas id="xaiSourceCanvas" width="224" height="224" style="position:absolute; top:0; left:0; z-index:5;"></canvas>
-        <canvas id="xaiOverlayCanvas" width="224" height="224"></canvas>
-      </div>
-      <div id="xaiDiagnosticMsg">Scanning environmental noise distributions... Please mirror your game movements to verify model attention blocks.</div>
-    </div>
-
-    <div id="game-container">
-      <canvas id="gameCanvas"></canvas>
-    </div>
-  </div>
-  
   <video id="webcam" autoplay playsinline width="224" height="224" style="display:none;"></video>
+  <canvas id="gameCanvas"></canvas>
 
   <script>
     const SECURITY_KEYGROUND = {
@@ -282,8 +234,9 @@
     let URL = ""; 
     let model, webcam, ctx, canvas;
     
-    let currentMode = "scanner"; 
-    let gameStarted = false;     
+    // Core Engine State Switch Variables
+    let currentMode = "scanner"; // "scanner" = Mode 1, "game" = Mode 2
+    let gameStarted = false;     // 追蹤 Mode 2 遊戲是否正式點擊開始
     let scanThrottleCounter = 0; 
 
     const layout = [
@@ -312,13 +265,42 @@
     let ghost2 = { x: 8, y: 5 };  let ghost2Start = { x: 8, y: 5 };
     let ghost3 = { x: 10, y: 5 }; let ghost3Start = { x: 10, y: 5 };
 
-    let moveCooldown = 0;
-    const MOVE_DELAY = 5; 
+    const ghostImage = new Image();
+    ghostImage.src = "pinky.jpeg"; 
+    let ghostImageLoaded = false;
+    ghostImage.onload = () => { ghostImageLoaded = true; };
 
-    // Doubled Speed Execution Parameters (Halved Gate Cooldown Delays)
-    let ghostCooldown = 0;  const GHOST_DELAY = 15; // 50 -> 25
-    let ghost2Cooldown = 0; const GHOST2_DELAY = 10; // 30 -> 15
-    let ghost3Cooldown = 0; const GHOST3_DELAY = 5;  // 15 -> 7
+    const ustImage = new Image();
+    ustImage.src = "ust_animation.gif"; 
+    let ustImageLoaded = false;
+    ustImage.onload = () => { ustImageLoaded = true; };
+
+    const logo35 = new Image();
+    logo35.src = "35a_logo.png";
+    let logo35Loaded = false;
+    logo35.onload = () => { logo35Loaded = true; };
+
+    const gceLogo = new Image();
+    gceLogo.src = "gce_logo.png";
+    let gceLogoLoaded = false;
+    gceLogo.onload = () => { gceLogoLoaded = true; };
+
+    const redBirdImage = new Image();
+    redBirdImage.src = "ust_red_bird.png";
+    let redBirdImageLoaded = false;
+    redBirdImage.onload = () => { redBirdImageLoaded = true; };
+
+    const ustStaticLogo = new Image();
+    ustStaticLogo.src = "ust_logo.png";
+    let ustStaticLogoLoaded = false;
+    ustStaticLogo.onload = () => { ustStaticLogoLoaded = true; };
+
+    let moveCooldown = 0;
+    const MOVE_DELAY = 10; 
+
+    let ghostCooldown = 0;  const GHOST_DELAY = 50;
+    let ghost2Cooldown = 0; const GHOST2_DELAY = 30;
+    let ghost3Cooldown = 0; const GHOST3_DELAY = 15;
 
     let powerMode = false;
     let powerTimerSeconds = 0; 
@@ -382,10 +364,7 @@
     function setupCanvas() {
         canvas = document.getElementById("gameCanvas");
         ctx = canvas.getContext("2d");
-        
-        const container = document.getElementById("game-container");
-        const availableWidth = container.clientWidth || 500; 
-        
+        const availableWidth = window.innerWidth * 0.9;
         TILE_SIZE = Math.floor(availableWidth / cols);
         canvas.width = TILE_SIZE * cols;
         canvas.height = TILE_SIZE * rows;
@@ -415,12 +394,11 @@
         } else {
             scanBtn.classList.remove("active");
             gameBtn.classList.add("active");
+            xaiWorkspace.style.display = "none";
             playCanvas.style.display = "block";
-            xaiWorkspace.style.display = "block"; 
             gameControls.style.display = "block";
             
-            setupCanvas();
-
+            // 根據當前遊戲生命週期控制按鈕顯示
             if (gameOver) {
                 document.getElementById("gameStartActionBtn").style.display = "none";
                 document.getElementById("gameRestartActionBtn").style.display = "inline-block";
@@ -445,18 +423,20 @@
       const direction = highest.className.toLowerCase();
       const confidencePercentage = (highest.probability * 100).toFixed(1);
 
-      scanThrottleCounter++;
-      if (scanThrottleCounter % 6 === 0) {
-          await processLiveXAIScan(direction, highest.probability);
-      }
-
       if (currentMode === "scanner") {
+          // ── MODE 1: LIVE DIAGNOSTIC SCANNER ARCHITECTURE ──
           document.getElementById("directionDisplay").innerText = 
               `🔍 Scanner Diagnostic View: [${direction.toUpperCase()}] (${confidencePercentage}%)`;
+          
+          scanThrottleCounter++;
+          if (scanThrottleCounter % 4 === 0) {
+              await processLiveXAIScan(direction, highest.probability);
+          }
       } else {
+          // ── MODE 2: ACTIVE GAMEPLAY ENGINE ARCHITECTURE ──
           if (gameStarted && !gameOver) {
-              // Doubled Pacman Speed Metrics (3 -> 6, 6 -> 12)
-              let speedFactor = powerMode ? 12 : 6; 
+              let speedFactor = 3 * (highest.probability * highest.probability);
+              if (powerMode) speedFactor *= 2; 
 
               document.getElementById("directionDisplay").innerText =
                 `Predicted: ${direction.toUpperCase()} (${confidencePercentage}%)` + (powerMode ? ` | POWER MODE ${powerTimerSeconds}s` : "");
@@ -533,7 +513,7 @@
                 }
             }
         }
-        msgDiv.innerHTML = `🎯 Current Tracked Node: <b>${targetClass.toUpperCase()}</b>. Red tiles isolate active spatial matrices. Adjust positioning to clean background vectors!`;
+        msgDiv.innerHTML = `🎯 Real-time Target: <b>${targetClass.toUpperCase()}</b>. Red tiles track active model attention weights. Clean backgrounds minimize false vector highlights!`;
     }
 
     document.getElementById("modeScannerBtn").addEventListener("click", () => switchEngineMode("scanner"));
@@ -638,6 +618,7 @@
                         if (lives <= 0) {
                             gameOver = true;
                             updateHighestScore();
+                            // 觸發重置按鈕
                             document.getElementById("gameStartActionBtn").style.display = "none";
                             document.getElementById("gameRestartActionBtn").style.display = "inline-block";
                             setTimeout(() => alert("👻 Game Over! You lost all your lives."), 50);
@@ -717,10 +698,15 @@
                     ctx.beginPath(); ctx.arc(dx, dy, Math.max(2, TILE_SIZE * 0.09), 0, 2*Math.PI); ctx.fill();
                     ctx.restore();
                 } else if (tile === "O") {
-                    ctx.save();
-                    ctx.shadowBlur = 10; ctx.shadowColor = "orange"; ctx.fillStyle = "orange";
-                    ctx.beginPath(); ctx.arc(dx, dy, Math.max(5, TILE_SIZE * 0.22), 0, 2*Math.PI); ctx.fill();
-                    ctx.restore();
+                    if (redBirdImageLoaded) {
+                        const birdSize = TILE_SIZE * 0.5; 
+                        ctx.drawImage(redBirdImage, dx - birdSize/2, dy - birdSize/2, birdSize, birdSize);
+                    } else {
+                        ctx.save();
+                        ctx.shadowBlur = 10; ctx.shadowColor = "orange"; ctx.fillStyle = "orange";
+                        ctx.beginPath(); ctx.arc(dx, dy, Math.max(5, TILE_SIZE*0.22), 0, 2*Math.PI); ctx.fill();
+                        ctx.restore();
+                    }
                 }
             }
         }
@@ -751,15 +737,15 @@
             ctx.save();
             const gX = gObj.x * TILE_SIZE;
             const gY = gObj.y * TILE_SIZE;
-            ctx.font = `${TILE_SIZE * 1.1}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
-            ctx.textAlign = "center"; ctx.textBaseline = "middle";
-
             if (powerMode) {
-                ctx.fillStyle = "#00ffff"; 
-                ctx.shadowBlur = 25; ctx.shadowColor = "#00ffff";
-                ctx.fillText("🥶", gX + TILE_SIZE / 2, gY + TILE_SIZE / 2);
+                if (ghostImageLoaded) {
+                    ctx.shadowBlur = 20; ctx.shadowColor = "pink";
+                    ctx.drawImage(ghostImage, gX, gY, TILE_SIZE, TILE_SIZE);
+                }
             } else {
                 ctx.fillStyle = "white"; 
+                ctx.font = `${TILE_SIZE * 1.1}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+                ctx.textAlign = "center"; ctx.textBaseline = "middle";
                 ctx.shadowBlur = 25; ctx.shadowColor = "#cc00ff";
                 ctx.fillText("👻", gX + TILE_SIZE / 2, gY + TILE_SIZE / 2);
             }
@@ -798,6 +784,35 @@
             }
         }
 
+        if (ustImageLoaded) {
+            const fullBlockSize = 3 * TILE_SIZE; 
+            const targetScale = 0.7;
+            const logoWidth = fullBlockSize * targetScale;
+            const logoHeight = fullBlockSize * targetScale;
+            const offset = 0.5 * (fullBlockSize - logoWidth);
+            const startX = (6 * TILE_SIZE) + offset;
+            const startY = (2 * TILE_SIZE) + offset;
+            ctx.drawImage(ustImage, startX, startY, logoWidth, logoHeight);
+        }
+        if (logo35Loaded) {
+            const areaW = 2 * TILE_SIZE; const areaH = 2 * TILE_SIZE; 
+            const targetW = areaW * 0.7; const targetH = areaH * 0.7;
+            const offX = (areaW - targetW) / 2; const offY = (areaH - targetH) / 2;
+            ctx.drawImage(logo35, (2 * TILE_SIZE) + offX, (8 * TILE_SIZE) + offY, targetW, targetH);
+        }
+        if (gceLogoLoaded) {
+            const areaW = 2 * TILE_SIZE; const areaH = 1 * TILE_SIZE; 
+            const targetW = areaW ; const targetH = areaH ;
+            ctx.drawImage(gceLogo, (7.5 * TILE_SIZE), (8 * TILE_SIZE), targetW, targetH);
+        }
+        if (ustStaticLogoLoaded) {
+            ctx.save();
+            const targetW = 2 * TILE_SIZE * 0.8; const targetH = 1 * TILE_SIZE * 0.8; 
+            const startX = (7 - 1.6 / 2) * TILE_SIZE; const startY = (10 + (1 - 0.8) / 2) * TILE_SIZE; 
+            ctx.drawImage(ustStaticLogo, startX, startY, targetW, targetH);
+            ctx.restore();
+        }
+
         updateHighestScore();
         document.getElementById("timeDisplay").textContent = "Time Left: " + timeLeft + "s";
 
@@ -806,6 +821,7 @@
             const bonus = timeLeft * 3;
             score += bonus;
             updateHighestScore();
+            // 贏遊戲時同樣激活重賽機制
             document.getElementById("gameStartActionBtn").style.display = "none";
             document.getElementById("gameRestartActionBtn").style.display = "inline-block";
             setTimeout(() => alert(`🎉 You Win! Final Score: ${score} (+${bonus} bonus)`), 100);
@@ -843,6 +859,7 @@
       }, 1000);
     }
 
+    // 🎮 Mode 2 專屬遊戲狀態控制按鈕群聯動邏輯
     document.getElementById("gameStartActionBtn").addEventListener("click", () => {
         if (!gameOver && !gameStarted) {
             gameStarted = true;
@@ -852,6 +869,7 @@
     });
 
     document.getElementById("gameRestartActionBtn").addEventListener("click", () => {
+        // 全面重設底層數據矩陣
         score = 0;
         timeLeft = 80;
         lives = 2;
@@ -868,6 +886,7 @@
         setupCanvas();
         updateHighestScore();
         
+        // 切換按鈕狀態
         document.getElementById("gameStartActionBtn").style.display = "inline-block";
         document.getElementById("gameRestartActionBtn").style.display = "none";
         document.getElementById("directionDisplay").innerText = `🎮 Mode 2: Game Ready! Click "Start Game" below to begin.`;
