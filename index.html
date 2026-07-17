@@ -435,7 +435,7 @@
       } else {
           // ── MODE 2: ACTIVE GAMEPLAY ENGINE ARCHITECTURE ──
           if (gameStarted && !gameOver) {
-              let speedFactor = 3 * (highest.probability * highest.probability);
+              let speedFactor = 1;
               if (powerMode) speedFactor *= 2; 
 
               document.getElementById("directionDisplay").innerText =
