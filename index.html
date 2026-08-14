@@ -193,8 +193,8 @@
   </div>
 
   <div id="mode-panel">
-    <button id="modeGameBtn" class="mode-btn active">Mode 1: Play Pac-Man Game</button>
-    <button id="modeScannerBtn" class="mode-btn">Mode 2: Live Diagnostic Scanner</button>
+    <button id="modeScannerBtn" class="mode-btn active">Mode 1: Live Diagnostic Scanner</button>
+    <button id="modeGameBtn" class="mode-btn">Mode 2: Play Pac-Man Game</button>
   </div>
 
   <!-- 🎮 遊戲內置狀態操作控制面板（動態切換開始/重賽） -->
@@ -221,7 +221,7 @@
 
   <script>
     const SECURITY_KEYGROUND = {
-        "1": "https://teachablemachine.withgoogle.com/models/1JVWRRj6D/",
+        "1": "https://teachablemachine.withgoogle.com/models/cCiEktJab/",
         "2": "https://teachablemachine.withgoogle.com/models/GP0sOp1Qj/",
         "3": "https://teachablemachine.withgoogle.com/models/cdWQ1Tfob3/",
         "4": "https://teachablemachine.withgoogle.com/models/H2bn8qiSV/",
@@ -235,10 +235,9 @@
     let model, webcam, ctx, canvas;
     
     // Core Engine State Switch Variables
-    let currentMode = "game"; // "game" = Mode 1, "scanner" = Mode 2
-    let gameStarted = false;     // 追蹤 Mode 1 遊戲是否正式點擊開始
+    let currentMode = "scanner"; // "scanner" = Mode 1, "game" = Mode 2
+    let gameStarted = false;     // 追蹤 Mode 2 遊戲是否正式點擊開始
     let scanThrottleCounter = 0; 
-    let isScanning = false;      // 併發鎖定避免 Scanner 阻塞主執行緒
 
     const layout = [
       "UUUUUUUUUUUUUU",
@@ -326,7 +325,7 @@
       document.body.appendChild(webcam.canvas);
       
       document.getElementById("mode-panel").style.display = "block";
-      switchEngineMode("game");
+      switchEngineMode("scanner");
     }
 
     function createBoard() {
@@ -425,16 +424,16 @@
       const confidencePercentage = (highest.probability * 100).toFixed(1);
 
       if (currentMode === "scanner") {
-          // ── MODE 2: LIVE DIAGNOSTIC SCANNER ARCHITECTURE ──
+          // ── MODE 1: LIVE DIAGNOSTIC SCANNER ARCHITECTURE ──
           document.getElementById("directionDisplay").innerText = 
-              `🔍 Mode 2 Diagnostic: [${direction.toUpperCase()}] (${confidencePercentage}%)`;
+              `🔍 Scanner Diagnostic View: [${direction.toUpperCase()}] (${confidencePercentage}%)`;
           
           scanThrottleCounter++;
-          if (scanThrottleCounter % 4 === 0 && !isScanning) {
-              processLiveXAIScan(direction, highest.probability);
+          if (scanThrottleCounter % 4 === 0) {
+              await processLiveXAIScan(direction, highest.probability);
           }
       } else {
-          // ── MODE 1: ACTIVE GAMEPLAY ENGINE ARCHITECTURE ──
+          // ── MODE 2: ACTIVE GAMEPLAY ENGINE ARCHITECTURE ──
           if (gameStarted && !gameOver) {
               let speedFactor = 3 * (highest.probability * highest.probability);
               if (powerMode) speedFactor *= 2; 
@@ -454,7 +453,7 @@
 
               checkCollision();
           } else if (!gameStarted && !gameOver) {
-              document.getElementById("directionDisplay").innerText = `🎮 Mode 1: Game Ready! Click "Start Game" below to begin.`;
+              document.getElementById("directionDisplay").innerText = `🎮 Mode 2: Game Ready! Click "Start Game" below to begin.`;
           }
           drawGame();
       }
@@ -463,71 +462,62 @@
     }
 
     async function processLiveXAIScan(targetClass, baselineProbability) {
-        if (isScanning || currentMode !== "scanner") return;
-        isScanning = true;
+        const srcCanvas = document.getElementById("xaiSourceCanvas");
+        const overlayCanvas = document.getElementById("xaiOverlayCanvas");
+        const sCtx = srcCanvas.getContext("2d");
+        const oCtx = overlayCanvas.getContext("2d");
+        const msgDiv = document.getElementById("xaiDiagnosticMsg");
 
-        try {
-            const srcCanvas = document.getElementById("xaiSourceCanvas");
-            const overlayCanvas = document.getElementById("xaiOverlayCanvas");
-            const sCtx = srcCanvas.getContext("2d");
-            const oCtx = overlayCanvas.getContext("2d");
-            const msgDiv = document.getElementById("xaiDiagnosticMsg");
+        sCtx.drawImage(webcam.canvas, 0, 0, 224, 224);
+        oCtx.clearRect(0, 0, 224, 224);
 
-            sCtx.drawImage(webcam.canvas, 0, 0, 224, 224);
-            oCtx.clearRect(0, 0, 224, 224);
+        const gridSize = 6;
+        const patchSize = 224 / gridSize;
+        let maxDrop = 0;
+        let matrix = [];
 
-            const gridSize = 6;
-            const patchSize = 224 / gridSize;
-            let maxDrop = 0;
-            let matrix = [];
+        const offscreenCanvas = document.createElement("canvas");
+        offscreenCanvas.width = 224;
+        offscreenCanvas.height = 224;
+        const oContext = offscreenCanvas.getContext("2d");
 
-            const offscreenCanvas = document.createElement("canvas");
-            offscreenCanvas.width = 224;
-            offscreenCanvas.height = 224;
-            const oContext = offscreenCanvas.getContext("2d");
+        for (let gy = 0; gy < gridSize; gy++) {
+            matrix[gy] = [];
+            for (let gx = 0; gx < gridSize; gx++) {
+                oContext.drawImage(srcCanvas, 0, 0);
+                oContext.fillStyle = "#808080"; 
+                oContext.fillRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
 
-            for (let gy = 0; gy < gridSize; gy++) {
-                matrix[gy] = [];
-                for (let gx = 0; gx < gridSize; gx++) {
-                    if (currentMode !== "scanner") return;
+                const newPredictions = await model.predict(offscreenCanvas);
+                const matchingPred = newPredictions.find(p => p.className === targetClass);
+                const newProb = matchingPred ? matchingPred.probability : 0;
 
-                    oContext.drawImage(srcCanvas, 0, 0);
-                    oContext.fillStyle = "#808080"; 
-                    oContext.fillRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
-
-                    const newPredictions = await model.predict(offscreenCanvas);
-                    const matchingPred = newPredictions.find(p => p.className === targetClass);
-                    const newProb = matchingPred ? matchingPred.probability : 0;
-
-                    const probDrop = Math.max(0, baselineProbability - newProb);
-                    matrix[gy][gx] = probDrop;
-                    if (probDrop > maxDrop) maxDrop = probDrop;
-                }
+                const probDrop = Math.max(0, baselineProbability - newProb);
+                matrix[gy][gx] = probDrop;
+                if (probDrop > maxDrop) maxDrop = probDrop;
             }
-
-            for (let gy = 0; gy < gridSize; gy++) {
-                for (let gx = 0; gx < gridSize; gx++) {
-                    const drop = matrix[gy][gx];
-                    const intensity = maxDrop > 0 ? (drop / maxDrop) : 0;
-
-                    if (intensity > 0.20) {
-                        oCtx.save();
-                        oCtx.fillStyle = `rgba(255, 0, 85, ${intensity * 0.70})`;
-                        oCtx.fillRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
-                        oCtx.strokeStyle = "rgba(0, 255, 255, 0.15)";
-                        oCtx.strokeRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
-                        oCtx.restore();
-                    }
-                }
-            }
-            msgDiv.innerHTML = `🎯 Real-time Target: <b>${targetClass.toUpperCase()}</b>. Red tiles track active model attention weights. Clean backgrounds minimize false vector highlights!`;
-        } finally {
-            isScanning = false;
         }
+
+        for (let gy = 0; gy < gridSize; gy++) {
+            for (let gx = 0; gx < gridSize; gx++) {
+                const drop = matrix[gy][gx];
+                const intensity = maxDrop > 0 ? (drop / maxDrop) : 0;
+
+                if (intensity > 0.20) {
+                    oCtx.save();
+                    oCtx.fillStyle = `rgba(255, 0, 85, ${intensity * 0.70})`;
+                    oCtx.fillRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
+                    oCtx.strokeStyle = "rgba(0, 255, 255, 0.15)";
+                    oCtx.strokeRect(gx * patchSize, gy * patchSize, patchSize, patchSize);
+                    oCtx.restore();
+                }
+            }
+        }
+        msgDiv.innerHTML = `🎯 Real-time Target: <b>${targetClass.toUpperCase()}</b>. Red tiles track active model attention weights. Clean backgrounds minimize false vector highlights!`;
     }
 
-    document.getElementById("modeGameBtn").addEventListener("click", () => switchEngineMode("game"));
     document.getElementById("modeScannerBtn").addEventListener("click", () => switchEngineMode("scanner"));
+    document.getElementById("modeGameBtn").addEventListener("click", () => switchEngineMode("game"));
 
     function movePacman(direction) {
       if (direction === "stop") return;
@@ -831,6 +821,7 @@
             const bonus = timeLeft * 3;
             score += bonus;
             updateHighestScore();
+            // 贏遊戲時同樣激活重賽機制
             document.getElementById("gameStartActionBtn").style.display = "none";
             document.getElementById("gameRestartActionBtn").style.display = "inline-block";
             setTimeout(() => alert(`🎉 You Win! Final Score: ${score} (+${bonus} bonus)`), 100);
@@ -868,7 +859,7 @@
       }, 1000);
     }
 
-    // 🎮 Mode 1 遊戲控制按鈕聯動邏輯
+    // 🎮 Mode 2 專屬遊戲狀態控制按鈕群聯動邏輯
     document.getElementById("gameStartActionBtn").addEventListener("click", () => {
         if (!gameOver && !gameStarted) {
             gameStarted = true;
@@ -878,6 +869,7 @@
     });
 
     document.getElementById("gameRestartActionBtn").addEventListener("click", () => {
+        // 全面重設底層數據矩陣
         score = 0;
         timeLeft = 80;
         lives = 2;
@@ -894,9 +886,10 @@
         setupCanvas();
         updateHighestScore();
         
+        // 切換按鈕狀態
         document.getElementById("gameStartActionBtn").style.display = "inline-block";
         document.getElementById("gameRestartActionBtn").style.display = "none";
-        document.getElementById("directionDisplay").innerText = `🎮 Mode 1: Game Ready! Click "Start Game" below to begin.`;
+        document.getElementById("directionDisplay").innerText = `🎮 Mode 2: Game Ready! Click "Start Game" below to begin.`;
         
         drawGame();
     });
