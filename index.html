@@ -193,8 +193,8 @@
   </div>
 
   <div id="mode-panel">
-    <button id="modeScannerBtn" class="mode-btn active">Mode 1: Live Diagnostic Scanner</button>
-    <button id="modeGameBtn" class="mode-btn">Mode 2: Play Pac-Man Game</button>
+    <button id="modeGameBtn" class="mode-btn active">Mode 1: Play Pac-Man Game</button>
+    <button id="modeScannerBtn" class="mode-btn">Mode 2: Live Diagnostic Scanner</button>
   </div>
 
   <!-- 🎮 遊戲內置狀態操作控制面板（動態切換開始/重賽） -->
@@ -221,7 +221,8 @@
 
   <script>
     const SECURITY_KEYGROUND = {
-        "1": "https://teachablemachine.withgoogle.com/models/1JVWRRj6D/",
+        "1": "https://teachablemachine.withgoogle.com/models/cCiEktJab/ ",
+        // "1": "https://teachablemachine.withgoogle.com/models/1JVWRRj6D/",
         "2": "https://teachablemachine.withgoogle.com/models/GP0sOp1Qj/",
         "3": "https://teachablemachine.withgoogle.com/models/cdWQ1Tfob3/",
         "4": "https://teachablemachine.withgoogle.com/models/H2bn8qiSV/",
@@ -235,7 +236,7 @@
     let model, webcam, ctx, canvas;
     
     // Core Engine State Switch Variables
-    let currentMode = "scanner"; // "scanner" = Mode 1, "game" = Mode 2
+    let currentMode = "game"; // "game" = Mode 1, "scanner" = Mode 2
     let gameStarted = false;     // 追蹤 Mode 2 遊戲是否正式點擊開始
     let scanThrottleCounter = 0; 
 
@@ -325,7 +326,7 @@
       document.body.appendChild(webcam.canvas);
       
       document.getElementById("mode-panel").style.display = "block";
-      switchEngineMode("scanner");
+      switchEngineMode("game");
     }
 
     function createBoard() {
@@ -435,7 +436,7 @@
       } else {
           // ── MODE 2: ACTIVE GAMEPLAY ENGINE ARCHITECTURE ──
           if (gameStarted && !gameOver) {
-              let speedFactor = 1;
+              let speedFactor = 3 * (highest.probability * highest.probability);
               if (powerMode) speedFactor *= 2; 
 
               document.getElementById("directionDisplay").innerText =
